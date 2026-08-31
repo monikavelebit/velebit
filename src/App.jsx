@@ -381,7 +381,8 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0}
 .signoutbtn{width:calc(100% - 16px);margin:8px;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid rgba(255,255,255,.15);color:${C.warmgray};padding:10px 13px;border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit}
 .signoutbtn:hover{background:rgba(255,255,255,.06);color:#fff}
 .hamburger{display:none;position:fixed;top:14px;left:14px;z-index:60;background:${C.deep};color:#fff;border:none;border-radius:8px;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer}
-.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40}
+.main.blurred{filter:blur(4px);pointer-events:none;user-select:none}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .head{padding:26px 34px 10px}
 .head h1{font-size:32px;font-weight:700;color:${C.brandBlueDark};letter-spacing:.3px}
@@ -691,9 +692,11 @@ export default function App() {
     <>
       <style>{CSS}</style>
       <div className="vlb">
-        <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open menu">
-          <MenuIcon size={20} />
-        </button>
+        {!menuOpen && (
+          <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open menu">
+            <MenuIcon size={20} />
+          </button>
+        )}
         {menuOpen && <div className="backdrop" onClick={() => setMenuOpen(false)} />}
         <aside className={"side" + (menuOpen ? " open" : "")}>
           <div className="brand">
@@ -711,7 +714,7 @@ export default function App() {
           </button>
         </aside>
 
-        <main className="main">
+        <main className={"main" + (menuOpen ? " blurred" : "")}>
           {view === "dashboard" && <Dashboard {...{ clients, deals, referrals, invoices, txns, settings, setView }} />}
           {view === "clients" && <Clients {...{ clients, setClients, deals, invoices, deleteClient }} />}
           {view === "deals" && <Deals {...{ deals, setDeals, clients, trashIt }} />}
