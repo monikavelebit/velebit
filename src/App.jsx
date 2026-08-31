@@ -19,11 +19,32 @@ const INVOICE_BG_LIGHT = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBA
 const INVOICE_BG_LIGHT_SRC = "data:image/jpeg;base64," + INVOICE_BG_LIGHT;
 
 /* --------------------------------------------------------------- brand */
+/* Dark theme. The keys keep their original names (they're referenced all over
+   the file) but now carry the DARK value for the same ROLE they always had:
+     offwhite      page background        (was the lightest, now the darkest)
+     surface       cards / tables / inputs
+     warmgray      borders & dividers
+     mid           muted / secondary text
+     charcoal      primary body text      (was dark text, now light text)
+     deep          deepest tone, sidebar gradient start
+     brandBlueDark headings & emphasis text — light blue, since #15537E is
+                   unreadable on a dark ground
+     brandBlueLt   primary action background (buttons, focus, nav accent)
+     brandBlueMid  links, chart fills, light-blue hover
+     brandBlueTint tinted chip background
+     light         true light, for the few things sitting on the blue sidebar */
 const C = {
-  offwhite: "#FAF9F7", warmgray: "#E0DEDA", mid: "#7A7671",
-  charcoal: "#2A2D33", deep: "#141519",
-  brandBlueDark: "#15537E", brandBlueLt: "#276A92", brandBlueTint: "#9DBBCD",
+  offwhite: "#141519", surface: "#2A2D33", warmgray: "#383C44", mid: "#9D9791",
+  charcoal: "#E1DFDB", deep: "#141519", light: "#FAF8F7",
+  brandBlueDark: "#8AACC8", brandBlueLt: "#276A92",
+  brandBlueMid: "#7298B9", brandBlueTint: "#1E3D55",
 };
+/* Semantic accents, re-tuned for a dark ground (the light-theme greens/reds
+   were too dark to read against #2A2D33). */
+const OK = "#5CBF8E";       // positive / paid / received — text
+const OK_BG = "#2E8A5C";    // positive — pill background (white text)
+const BAD = "#E08A8A";      // negative / owing / error — text
+const BAD_BORDER = "#5C3A3C";
 
 /* ------------------------------------------------------------- storage */
 import { createClient } from "@supabase/supabase-js";
@@ -196,17 +217,21 @@ const SERVICES = [
   "M&A advisory & introductions", "Broker-dealer referral",
 ];
 const DEAL_STAGES = ["Lead", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
+/* Pill / dot colours. All carry white text (.tag sets color:#fff), so every
+   value here is a mid-tone that stays legible on the dark card behind it.
+   The ladder runs neutral grey -> deep blue -> brand blue -> teal -> green as
+   a deal advances, so stages are distinguishable by hue, not just lightness. */
 const STAGE_COLOR = {
-  Lead: "#2A2D33", Qualified: "#9DBBCD", Proposal: "#276A92",
-  Negotiation: "#15537E", Won: "#2f8f57", Lost: "#b04a4a",
+  Lead: "#67625C", Qualified: "#1F4E8C", Proposal: "#276A92",
+  Negotiation: "#35809A", Won: OK_BG, Lost: "#B85252",
 };
 const REF_STATUS = ["Referred", "In principal approval", "Approved", "Paid", "Declined"];
 const REF_COLOR = {
-  Referred: "#2A2D33", "In principal approval": "#9DBBCD",
-  Approved: "#276A92", Paid: "#2f8f57", Declined: "#b04a4a",
+  Referred: "#67625C", "In principal approval": "#1F4E8C",
+  Approved: "#276A92", Paid: OK_BG, Declined: "#B85252",
 };
 const INV_STATUS = ["Draft", "Sent", "Partial", "Paid"];
-const INV_COLOR = { Draft: "#2A2D33", Sent: "#276A92", Partial: "#15537E", Paid: "#2f8f57" };
+const INV_COLOR = { Draft: "#67625C", Sent: "#276A92", Partial: "#35809A", Paid: OK_BG };
 const EXP_CATS = [
   "Government / licensing fees", "Professional fees", "Software / subscriptions",
   "Marketing", "Travel", "Office / rent", "Bank charges", "Other",
@@ -365,23 +390,29 @@ function escapeHtml(s) {
 /* ================================================================= UI */
 const CSS = `
 .vlb *{box-sizing:border-box}
-html,body,#root{width:100%;max-width:none;margin:0;padding:0}
+/* color-scheme:dark makes the browser render native chrome — scrollbars, the
+   date-picker popup, select dropdown lists — in dark to match. */
+html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offwhite};color-scheme:dark}
 .vlb{font-family:'Montserrat',system-ui,-apple-system,sans-serif;color:${C.charcoal};background:${C.offwhite};min-height:100vh;width:100%;display:flex}
 .vlb h1,.vlb h2,.vlb h3,.vlb .disp{font-family:'Montserrat',system-ui,sans-serif;font-weight:700}
-.side{width:230px;flex-shrink:0;background:linear-gradient(180deg,${C.deep},${C.brandBlueDark});color:${C.offwhite};display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+/* Sidebar gradient is unchanged from the light theme, so anything sitting on
+   it keeps a literal light colour rather than a palette key. */
+.side{width:230px;flex-shrink:0;background:linear-gradient(180deg,#141519,#15537E);color:${C.light};display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
 .brand{padding:22px 20px 14px;display:flex;align-items:center;justify-content:center}
 .brand .brandFull{width:100%;max-width:190px;height:auto;object-fit:contain}
-.brand img:not(.brandFull){width:52px;height:52px;object-fit:contain;background:${C.offwhite};border-radius:12px;padding:4px}
+.brand img:not(.brandFull){width:52px;height:52px;object-fit:contain;background:${C.light};border-radius:12px;padding:4px}
 .nav{padding:8px;flex:1;overflow:auto}
-.nav button{width:100%;display:flex;align-items:center;gap:11px;background:transparent;border:none;border-left:2px solid transparent;color:${C.warmgray};padding:11px 13px 11px 11px;border-radius:0;font-size:13.5px;cursor:pointer;text-align:left;font-family:inherit}
+.nav button{width:100%;display:flex;align-items:center;gap:11px;background:transparent;border:none;border-left:2px solid transparent;color:${C.charcoal};padding:11px 13px 11px 11px;border-radius:0;font-size:13.5px;cursor:pointer;text-align:left;font-family:inherit}
 .nav button:hover{background:rgba(255,255,255,.06);color:#fff}
-.nav button.on{background:rgba(39,106,146,.18);border-left:2px solid ${C.brandBlueLt};color:#fff}
-.nav button.on .ic{color:${C.brandBlueLt}}
+.nav button.on{background:rgba(114,152,185,.20);border-left:2px solid ${C.brandBlueMid};color:#fff}
+.nav button.on .ic{color:${C.brandBlueMid}}
 .nav .ic{display:flex;color:${C.mid}}
-.signoutbtn{width:calc(100% - 16px);margin:8px;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid rgba(255,255,255,.15);color:${C.warmgray};padding:10px 13px;border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.signoutbtn{width:calc(100% - 16px);margin:8px;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid rgba(255,255,255,.15);color:${C.charcoal};padding:10px 13px;border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit}
 .signoutbtn:hover{background:rgba(255,255,255,.06);color:#fff}
-.hamburger{display:none;position:fixed;top:14px;left:14px;z-index:60;background:${C.deep};color:#fff;border:none;border-radius:8px;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer}
-.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40}
+/* Was C.deep, which is now the page background — the button would vanish.
+   Brand blue keeps it visible against the dark page. */
+.hamburger{display:none;position:fixed;top:14px;left:14px;z-index:60;background:${C.brandBlueLt};color:#fff;border:none;border-radius:8px;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer}
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40}
 .main.blurred{filter:blur(4px);pointer-events:none;user-select:none}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .head{padding:26px 34px 10px}
@@ -390,7 +421,7 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0}
 .body{padding:14px 34px 60px;flex:1}
 .grid{display:grid;gap:16px}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
-.card{background:#fff;border:1px solid ${C.warmgray};border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px rgba(20,22,26,.04)}
+.card{background:${C.surface};border:1px solid ${C.warmgray};border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px rgba(0,0,0,.35)}
 .kpi .lab{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:${C.mid};font-weight:600}
 .kpi .v{font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:700;color:${C.brandBlueDark};margin-top:6px;line-height:1}
 .kpi .sub{font-size:12px;color:${C.mid};margin-top:4px}
@@ -398,30 +429,32 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0}
 .sectitle h2{font-size:22px;color:${C.brandBlueDark};font-weight:700}
 .btn{display:inline-flex;align-items:center;gap:7px;border:none;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
 .btn.p{background:${C.brandBlueLt};color:#fff}
-.btn.p:hover{background:${C.brandBlueDark}}
-.btn.s{background:#fff;color:${C.brandBlueDark};border:1px solid ${C.warmgray}}
+/* On a dark ground hover states LIGHTEN rather than darken. */
+.btn.p:hover{background:${C.brandBlueMid}}
+.btn.s{background:${C.surface};color:${C.brandBlueDark};border:1px solid ${C.warmgray}}
 .btn.s:hover{border-color:${C.mid}}
-.btn.g{background:${C.brandBlueDark};color:#fff}.btn.g:hover{background:${C.deep}}
+.btn.g{background:${C.brandBlueDark};color:${C.deep}}.btn.g:hover{background:#A6C3DA}
 .btn.ic{padding:7px;border-radius:9px}
-.btn.danger{background:#fff;color:#b04a4a;border:1px solid #eccaca}
-.tablewrap{background:#fff;border:1px solid ${C.warmgray};border-radius:16px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.btn.danger{background:${C.surface};color:${BAD};border:1px solid ${BAD_BORDER}}
+.tablewrap{background:${C.surface};border:1px solid ${C.warmgray};border-radius:16px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
 .tablewrap table{min-width:600px}
 table.tbl{width:100%;border-collapse:collapse}
-.tbl th{text-align:center;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:${C.mid};font-weight:600;padding:12px 16px;border-bottom:1px solid ${C.warmgray};background:#faf9f7}
-.tbl td{padding:12px 16px;font-size:13.5px;border-bottom:1px solid #f1efec;vertical-align:middle;text-align:center}
+.tbl th{text-align:center;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:${C.mid};font-weight:600;padding:12px 16px;border-bottom:1px solid ${C.warmgray};background:#22252B}
+.tbl td{padding:12px 16px;font-size:13.5px;border-bottom:1px solid #33373E;vertical-align:middle;text-align:center}
 .tbl tr:last-child td{border-bottom:none}
-.tbl tr:hover td{background:${C.offwhite}}
+.tbl tr:hover td{background:#343841}
 .num{text-align:center;font-variant-numeric:tabular-nums}
 .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;color:#fff}
 .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
 .empty{text-align:center;padding:46px 20px;color:${C.mid};font-size:13.5px}
 .empty .disp{font-size:22px;color:${C.brandBlueDark};margin-bottom:6px}
 .rowact{display:flex;gap:6px;justify-content:flex-end}
-.iconbtn{border:1px solid ${C.warmgray};background:#fff;border-radius:8px;padding:6px;cursor:pointer;color:${C.mid};display:flex}
+/* Sits inside table rows, so it lifts off the row rather than matching it. */
+.iconbtn{border:1px solid ${C.warmgray};background:#33373F;border-radius:8px;padding:6px;cursor:pointer;color:${C.mid};display:flex}
 .iconbtn:hover{color:${C.brandBlueDark};border-color:${C.mid}}
-.iconbtn.del:hover{color:#b04a4a;border-color:#eccaca}
-.overlay{position:fixed;inset:0;background:rgba(21,22,26,.5);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
-.modal{background:${C.offwhite};border-radius:18px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.iconbtn.del:hover{color:${BAD};border-color:#6B4245}
+.overlay{position:fixed;inset:0;background:rgba(8,9,11,.7);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
+.modal{background:#1C1F24;border:1px solid ${C.warmgray};border-radius:18px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .modal.wide{max-width:900px}
 .mhead{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid ${C.warmgray}}
 .mhead h3{font-size:21px;color:${C.brandBlueDark};font-weight:700}
@@ -429,22 +462,27 @@ table.tbl{width:100%;border-collapse:collapse}
 .mfoot{padding:16px 22px;border-top:1px solid ${C.warmgray};display:flex;justify-content:flex-end;gap:10px}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:12px;font-weight:600;color:${C.charcoal};margin-bottom:5px;letter-spacing:.2px}
-.field input,.field select,.field textarea{width:100%;border:1px solid ${C.warmgray};border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit;color:${C.charcoal};background:#fff}
-.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:${C.brandBlueLt};box-shadow:0 0 0 3px rgba(39,106,146,.12)}
+.field input,.field select,.field textarea{width:100%;border:1px solid ${C.warmgray};border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit;color:${C.charcoal};background:${C.surface}}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:${C.brandBlueMid};box-shadow:0 0 0 3px rgba(114,152,185,.25)}
+.vlb ::placeholder{color:${C.mid};opacity:1}
 .frow{display:flex;gap:12px}.frow>*{flex:1}
 .themetoggle{display:flex;border:1px solid ${C.warmgray};border-radius:9px;overflow:hidden;width:fit-content}
-.themetoggle button{padding:8px 20px;font-size:13px;font-weight:600;border:none;background:#fff;color:${C.mid};cursor:pointer;font-family:inherit}
+.themetoggle button{padding:8px 20px;font-size:13px;font-weight:600;border:none;background:${C.surface};color:${C.mid};cursor:pointer;font-family:inherit}
 .themetoggle button+button{border-left:1px solid ${C.warmgray}}
 .themetoggle button.on{background:${C.brandBlueLt};color:#fff}
-.search{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid ${C.warmgray};border-radius:10px;padding:8px 12px;max-width:280px}
+.search{display:flex;align-items:center;gap:8px;background:${C.surface};border:1px solid ${C.warmgray};border-radius:10px;padding:8px 12px;max-width:280px}
 .search input{border:none;outline:none;font-size:13px;width:100%;font-family:inherit;background:transparent}
 .pill{font-size:12px;color:${C.mid}}
-.note{background:#f4f2ee;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:12px 15px;font-size:12.5px;display:flex;gap:9px;align-items:flex-start}
-.itemtbl input{border:1px solid ${C.warmgray};border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit}
-.linkbtn{background:none;border:none;color:${C.brandBlueLt};font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;padding:0}
-.previewframe{width:100%;height:78vh;border:1px solid ${C.warmgray};border-radius:12px;background:#fff}
+.note{background:#22252B;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:12px 15px;font-size:12.5px;display:flex;gap:9px;align-items:flex-start}
+.itemtbl input{border:1px solid ${C.warmgray};border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit;background:${C.surface};color:${C.charcoal}}
+.linkbtn{background:none;border:none;color:${C.brandBlueMid};font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;padding:0}
+.previewframe{width:100%;height:78vh;border:1px solid ${C.warmgray};border-radius:12px;background:${C.surface}}
 .stat2{display:flex;gap:10px;flex-wrap:wrap}
-.chip{background:#f4f2ee;border:1px solid ${C.warmgray};border-radius:999px;padding:5px 12px;font-size:12px;color:${C.charcoal}}
+.chip{background:#22252B;border:1px solid ${C.warmgray};border-radius:999px;padding:5px 12px;font-size:12px;color:${C.charcoal}}
+/* Recharts renders its tooltip as an inline-styled white box — override it so
+   it doesn't flash white on top of the dark chart. */
+.recharts-default-tooltip{background:${C.surface} !important;border:1px solid ${C.warmgray} !important;border-radius:10px}
+.recharts-tooltip-label,.recharts-tooltip-item{color:${C.charcoal} !important}
 
 /* ---- Mobile responsive ---- */
 @media (max-width: 860px){
@@ -519,7 +557,9 @@ function LoginScreen() {
       <style>{CSS}</style>
       <div className="vlb" style={{ alignItems: "center", justifyContent: "center" }}>
         <form onSubmit={submit} className="card" style={{ width: 340, display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
-          <img src={LOGO_SRC} width="70" alt="" />
+          {/* The mark is dark artwork, so it needs a light plate behind it on a
+              dark card — same treatment the sidebar already gives it. */}
+          <img src={LOGO_SRC} width="70" alt="" style={{ background: C.light, borderRadius: 12, padding: 6 }} />
           <div style={{ fontSize: 15, fontWeight: 700, color: C.brandBlueDark, marginTop: -4 }}>Velebit Consulting</div>
           <div style={{ width: "100%" }}>
             <Field label="Email">
@@ -529,7 +569,7 @@ function LoginScreen() {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </Field>
           </div>
-          {err && <div style={{ color: "#b04a4a", fontSize: 12.5, textAlign: "center" }}>{err}</div>}
+          {err && <div style={{ color: BAD, fontSize: 12.5, textAlign: "center" }}>{err}</div>}
           <button className="btn p" type="submit" disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
             {busy ? "Signing in…" : "Sign in"}
           </button>
@@ -602,6 +642,11 @@ export default function App() {
   useEffect(() => { if (loaded.current) save("velebit:txns", txns); }, [txns]);
   useEffect(() => { if (loaded.current) save("velebit:trash", trash); }, [trash]);
   useEffect(() => { if (loaded.current) save("velebit:settings", settings); }, [settings]);
+
+  // Switching sections keeps the window's scroll position, so picking a new
+  // section while scrolled down drops you into the middle of it. Every section
+  // should start at its own top.
+  useEffect(() => { window.scrollTo(0, 0); }, [view]);
 
   const trashLabel = { client: "Client", deal: "Deal", referral: "Referral", invoice: "Invoice", txn: "Transaction" };
   const trashName = (t) => {
@@ -777,13 +822,13 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
             <div className="card" style={{ height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={months} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#33373E" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.mid }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: C.mid }} axisLine={false} tickLine={false} width={54}
                     tickFormatter={(v) => v >= 1000 ? (v / 1000) + "k" : v} />
-                  <Tooltip formatter={(v) => money(v) + " " + settings.bank.currency} cursor={{ fill: "rgba(62,110,150,.06)" }} />
+                  <Tooltip formatter={(v) => money(v) + " " + settings.bank.currency} cursor={{ fill: "rgba(114,152,185,.10)" }} />
                   <Bar dataKey="v" radius={[6, 6, 0, 0]}>
-                    {months.map((_, i) => <Cell key={i} fill={C.brandBlueLt} />)}
+                    {months.map((_, i) => <Cell key={i} fill={C.brandBlueMid} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -797,7 +842,7 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
                     const ds = deals.filter((d) => d.stage === st);
                     const val = ds.reduce((s, d) => s + num(d.value), 0);
                     return (
-                      <div key={st} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 6px", borderBottom: "1px solid #f1efec" }}>
+                      <div key={st} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 6px", borderBottom: "1px solid #33373E" }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 4, background: STAGE_COLOR[st] }} />{st}</span>
                         <span className="num" style={{ fontSize: 13, color: C.charcoal }}>{money(val)} <span style={{ color: C.mid, fontSize: 11 }}>· {ds.length}</span></span>
@@ -810,7 +855,7 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
                 <div className="sectitle"><h2>Recent invoices</h2></div>
                 <div className="card" style={{ padding: 14 }}>
                   {invT.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5).map((i) => (
-                    <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 6px", borderBottom: "1px solid #f1efec" }}>
+                    <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 6px", borderBottom: "1px solid #33373E" }}>
                       <span style={{ fontSize: 13 }}><b style={{ color: C.brandBlueDark }}>#{i.invoiceNo}</b> · {i.billTo?.name || "—"}</span>
                       <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
                         <Tag label={i.status} color={INV_COLOR[i.status] || C.mid} />
@@ -839,7 +884,7 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
   list = sortMode === "az"
     ? list.sort((a, b) => firstName(a.name).localeCompare(firstName(b.name)))
     : list.reverse();
-  const selStyle = { border: "1px solid #8AACC8", borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: "#8AACC8", color: "#fff" };
+  const selStyle = { border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light };
 
   const remove = (id) => {
     if (confirm("Delete this client? Their deals, referrals, and invoices will be moved to the bin too, and all restored together if you undo this.")) { const c = clients.find((x) => x.id === id); if (c) deleteClient(c); }
@@ -925,7 +970,7 @@ function Deals({ deals, setDeals, clients, trashIt }) {
   const filtered = deals
     .filter((d) => serviceFilter === "all" || d.service === serviceFilter)
     .filter((d) => stageFilter === "all" || d.stage === stageFilter);
-  const selStyle = { border: "1px solid #8AACC8", borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: "#8AACC8", color: "#fff" };
+  const selStyle = { border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light };
 
   return (
     <>
@@ -1023,7 +1068,7 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
                     <td>{r.broker}</td>
                     <td className="num">{money(r.dealValue)}</td>
                     <td className="num">{money(r.feeExpected)}</td>
-                    <td className="num" style={{ color: num(r.feeReceived) ? "#2f8f57" : C.mid }}>{money(r.feeReceived)}</td>
+                    <td className="num" style={{ color: num(r.feeReceived) ? OK : C.mid }}>{money(r.feeReceived)}</td>
                     <td><Tag label={r.status} color={REF_COLOR[r.status]} /></td>
                     <td><div className="rowact">
                       <button className="iconbtn" onClick={() => setEdit(r)}><Pencil size={14} /></button>
@@ -1174,7 +1219,7 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
                       <td style={{ fontSize: 12.5 }}>{fmtDate(i.date)}</td>
                       <td>{i.billTo?.name || "—"}</td>
                       <td className="num">{money(t.total)}</td>
-                      <td className="num" style={{ color: t.owing > 0 ? "#b04a4a" : "#2f8f57" }}>{money(t.owing)}</td>
+                      <td className="num" style={{ color: t.owing > 0 ? BAD : OK }}>{money(t.owing)}</td>
                       <td><Tag label={i.status} color={INV_COLOR[i.status] || C.mid} /></td>
                       <td><div className="rowact">
                         <button className="iconbtn" title="Preview" onClick={() => setPreview(i)}><FileText size={14} /></button>
@@ -1279,7 +1324,7 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, download }) {
           </div>
           <Field label="Balance already paid (AED)"><input type="number" value={edit.balancePaid ?? ""} onChange={(e) => set({ balancePaid: e.target.value })} /></Field>
         </div>
-        <div style={{ width: 280, background: "#fff", border: "1px solid " + C.warmgray, borderRadius: 12, padding: "12px 16px" }}>
+        <div style={{ width: 280, background: C.surface, border: "1px solid " + C.warmgray, borderRadius: 12, padding: "12px 16px" }}>
           <Row l="SUB TOTAL" a={money(t.subtotal)} />
           {t.vatEnabled && <Row l={"VAT " + Math.round(t.vatRate * 100) + "%"} a={money(t.vat)} />}
           <Row l={"TOTAL " + settings.bank.currency} a={money(t.total)} big />
@@ -1331,7 +1376,7 @@ function Accounting({ txns, setTxns, invoices, settings, trashIt }) {
           <KPI lab={"Net " + yr} v={money(income - expense)} sub="Before Corporate Tax" />
         </div>
         <div className="sectitle" style={{ marginTop: 22 }}>
-          <select value={yr} onChange={(e) => setYr(e.target.value)} style={{ border: "1px solid #8AACC8", borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: "#8AACC8", color: "#fff" }}>
+          <select value={yr} onChange={(e) => setYr(e.target.value)} style={{ border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light }}>
             {years.map((y) => <option key={y}>{y}</option>)}
           </select>
           <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add expense</button>
@@ -1343,7 +1388,7 @@ function Accounting({ txns, setTxns, invoices, settings, trashIt }) {
               {all.map((t) => (
                 <tr key={t.id}>
                   <td style={{ fontSize: 12.5 }}>{fmtDate(t.date)}</td>
-                  <td><Tag label={t.type === "income" ? "Income" : "Expense"} color={t.type === "income" ? "#2f8f57" : "#15537E"} /></td>
+                  <td><Tag label={t.type === "income" ? "Income" : "Expense"} color={t.type === "income" ? OK_BG : C.brandBlueLt} /></td>
                   <td style={{ fontSize: 12.5 }}>{t.category}</td>
                   <td>{t.description}</td>
                   <td className="num">{money(t.amount)}</td>
@@ -1413,7 +1458,7 @@ function Tax({ invoices, txns, settings }) {
       <div className="head"><h1>Tax & VAT</h1><p>Output/input VAT by quarter and a Corporate Tax estimate</p></div>
       <div className="body">
         <div className="sectitle"><h2 style={{ fontSize: 16, color: C.mid, fontFamily: "Montserrat", fontWeight: 600 }}>Tax year</h2>
-          <select value={yr} onChange={(e) => setYr(e.target.value)} style={{ border: "1px solid #8AACC8", borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: "#8AACC8", color: "#fff" }}>{years.map((y) => <option key={y}>{y}</option>)}</select></div>
+          <select value={yr} onChange={(e) => setYr(e.target.value)} style={{ border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light }}>{years.map((y) => <option key={y}>{y}</option>)}</select></div>
 
         <div className="note" style={{ marginBottom: 18 }}><AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
           Estimates for internal planning only — not tax advice. Velebit is not a registered tax agent; confirm filings with a registered tax agent or the FTA. VAT registration is required once taxable turnover exceeds AED 375,000; only charge VAT once registered.</div>
@@ -1428,7 +1473,7 @@ function Tax({ invoices, txns, settings }) {
                   <td style={{ fontWeight: 600 }}>Q{q.qn} {yr}</td>
                   <td className="num">{money(q.output)}</td>
                   <td className="num" style={{ color: C.mid }}>{money(q.input)}</td>
-                  <td className="num" style={{ fontWeight: 700, color: q.net > 0 ? C.brandBlueDark : "#2f8f57" }}>{money(q.net)}</td>
+                  <td className="num" style={{ fontWeight: 700, color: q.net > 0 ? C.brandBlueDark : OK }}>{money(q.net)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1452,7 +1497,7 @@ function Tax({ invoices, txns, settings }) {
               Taxable profit = revenue − deductible expenses. Corporate Tax applies at {Math.round(settings.ctRate * 100)}% on profit above AED {money(settings.ctThreshold)}; profit at or below the threshold is taxed at 0%.
             </p>
             {sbrEligible ? (
-              <div className="chip" style={{ marginTop: 10, background: "#eaf5ee", borderColor: "#bfe0cb", color: "#2f8f57" }}>
+              <div className="chip" style={{ marginTop: 10, background: "#17301F", borderColor: "#2C5A3C", color: OK }}>
                 Small Business Relief applied — revenue ≤ AED {money(settings.sbrRevenueCap)}, tax estimated at 0.
               </div>
             ) : (
@@ -1624,7 +1669,7 @@ function SettingsView(props) {
 
         <div style={{ display: "flex", gap: 10, marginTop: 18, alignItems: "center" }}>
           <button className="btn p" onClick={apply}><Check size={15} />Save settings</button>
-          {saved && <span style={{ color: "#2f8f57", fontSize: 13, fontWeight: 600 }}>Saved.</span>}
+          {saved && <span style={{ color: OK, fontSize: 13, fontWeight: 600 }}>Saved.</span>}
         </div>
 
         <div className="sectitle" style={{ marginTop: 30 }}><h2>Export for accounting software</h2></div>
