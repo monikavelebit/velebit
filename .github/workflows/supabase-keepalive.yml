@@ -12,7 +12,7 @@ on:
     # Runs on days 1, 6, 11, 16, 21, 26, 31 of every month at 06:00 UTC.
     # Largest gap between runs is ~6 days (day 26 -> 31 -> 1), safely under
     # Supabase's 7-day inactivity window.
-    - cron: "0 6 */5 * *"
+    - cron: "0 6 * * *"
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 env:
