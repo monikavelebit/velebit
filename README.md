@@ -57,7 +57,11 @@ The one place environment variables *are* used is server-side, outside this buil
 - **`backups` bucket** (private) — automatic weekly JSON backups, written by the
   `backup-data` Edge Function using the service-role key (the browser can only read this
   bucket, never write to it directly, other than triggering the function via "Backup now").
-  The function keeps the most recent 12 backups and prunes older ones.
+  The function keeps the most recent 12 backups and prunes older ones. The schedule itself
+  (a `pg_cron` job calling the function weekly) is a database-side config, not code deployed
+  from this repo — see `supabase/backup_schedule.sql` for the exact, verified job definition
+  (redacted of its auth token) so it can be reproduced on a new Supabase project if ever
+  needed.
 
 ## Backup behavior, at a glance
 
