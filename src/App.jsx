@@ -225,6 +225,16 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 const money = (n) =>
   (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// Compact display only (e.g. "35k") for tight mobile summaries where the
+// exact cents don't matter — never used for anything that feeds a
+// calculation or gets stored; those always use money()/num() as before.
+const moneyCompact = (n) => {
+  const v = Number(n) || 0;
+  if (Math.abs(v) >= 1000) return Math.round(v / 1000) + "k";
+  return money(v);
+};
+// Always-2-decimal AED display for Tax & VAT / Settings monetary lines.
+const moneyAED = (n) => "AED " + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -467,7 +477,7 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offw
 .backdrop.bare{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
 .main.blurred{filter:blur(4px);pointer-events:none;user-select:none}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
-.head{padding:26px 34px 10px}
+.head{padding:20px 34px 8px}
 .head h1{font-size:32px;font-weight:700;color:${C.brandBlueDark};letter-spacing:.3px}
 .head p{color:${C.mid};font-size:13.5px;margin-top:2px}
 .body{padding:14px 34px 60px;flex:1}
@@ -478,7 +488,7 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offw
 .kpi .v{font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:700;color:${C.brandBlueDark};margin-top:6px;line-height:1}
 .kpi .sub{font-size:12px;color:${C.mid};margin-top:4px}
 .sectitle{display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px}
-.sectitle h2{font-size:22px;color:${C.brandBlueDark};font-weight:700}
+.sectitle h2{font-size:19px;color:${C.brandBlueDark};font-weight:700}
 .btn{display:inline-flex;align-items:center;gap:7px;border:none;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
 .btn.p{background:${C.brandBlueLt};color:#fff}
 /* On a dark ground hover states LIGHTEN rather than darken. */
@@ -534,7 +544,7 @@ table.tbl{width:100%;border-collapse:collapse}
 .search{display:flex;align-items:center;gap:8px;background:${C.surface};border:1px solid ${C.warmgray};border-radius:10px;padding:8px 12px;max-width:280px}
 .search input{border:none;outline:none;font-size:13px;width:100%;font-family:inherit;background:transparent}
 .pill{font-size:12px;color:${C.mid}}
-.note{background:#22252B;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:12px 15px;font-size:12.5px;display:flex;gap:9px;align-items:flex-start}
+.note{background:#22252B;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:9px 13px;font-size:12px;display:flex;gap:9px;align-items:flex-start}
 .itemtbl input{border:1px solid ${C.warmgray};border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit;background:${C.surface};color:${C.charcoal}}
 .linkbtn{background:none;border:none;color:${C.brandBlueMid};font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;padding:0}
 .previewframe{width:100%;height:78vh;border:1px solid ${C.warmgray};border-radius:12px;background:${C.surface}}
@@ -575,8 +585,28 @@ table.tbl{width:100%;border-collapse:collapse}
 .detailcard-section{display:flex;flex-direction:column;gap:6px}
 .detailcard-section h4{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:${C.mid};font-weight:600;margin:0}
 
+/* ---- Responsive table/card toggle: every screen renders BOTH a desktop
+   .tablewrap and a mobile .mobile-cards block; these two rules pick exactly
+   one depending on viewport width, so there is never a horizontally
+   scrolling table on a narrow phone. ---- */
+.hide-mobile{}
+.hide-desktop{display:none}
+/* ---- Compact segmented control (Accounting's Expense | Income) ---- */
+.segctrl{display:flex;border:1px solid ${C.warmgray};border-radius:9px;overflow:hidden;width:100%}
+.segctrl button{flex:1;padding:9px 12px;font-size:13px;font-weight:600;border:none;background:${C.surface};color:${C.mid};cursor:pointer;font-family:inherit}
+.segctrl button+button{border-left:1px solid ${C.warmgray}}
+.segctrl button.on{background:${C.brandBlueLt};color:#fff}
+
 /* ---- Mobile responsive ---- */
 @media (max-width: 860px){
+  .hide-mobile{display:none}
+  .hide-desktop{display:block}
+  .grid.kpis{grid-template-columns:1fr 1fr !important;gap:10px}
+  .kpi{padding:12px 14px !important}
+  .kpi .v{font-size:21px !important}
+  .kpi .lab{font-size:10px !important}
+  .kpi .sub{font-size:10.5px !important}
+  .search{max-width:none !important;width:100%}
   .hamburger{display:flex}
   .backdrop{display:block}
   .side{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 20px rgba(0,0,0,.3);width:clamp(180px,50vw,230px)}
@@ -757,9 +787,9 @@ export function EmptyState({ title, hint }) {
 // Strips everything but digits, a single leading "-", and a single ".".
 // This is the value that gets stored/calculated on — never the display
 // string with commas in it.
-function parseMoneyInput(text) {
+function parseMoneyInput(text, allowNegative) {
   const s = String(text ?? "");
-  const neg = s.trim().startsWith("-");
+  const neg = allowNegative && s.trim().startsWith("-");
   let digits = s.replace(/[^0-9.]/g, "");
   const dot = digits.indexOf(".");
   if (dot !== -1) digits = digits.slice(0, dot + 1) + digits.slice(dot + 1).replace(/\./g, "");
@@ -781,14 +811,14 @@ function formatMoneyDisplay(clean) {
 // caller's existing state already holds (e.g. it.price, edit.balancePaid),
 // so num()/invTotals()/buildInvoiceHTMLv3 need no changes — only the input
 // presentation differs.
-export function MoneyInput({ value, onChange, ...rest }) {
+export function MoneyInput({ value, onChange, allowNegative = false, ...rest }) {
   const clean = value === undefined || value === null ? "" : String(value);
   return (
     <input
       type="text"
       inputMode="decimal"
       value={formatMoneyDisplay(clean)}
-      onChange={(e) => onChange(parseMoneyInput(e.target.value))}
+      onChange={(e) => onChange(parseMoneyInput(e.target.value, allowNegative))}
       {...rest}
     />
   );
@@ -1071,7 +1101,7 @@ export default function App() {
   // should start at its own top.
   useEffect(() => { window.scrollTo(0, 0); }, [view]);
 
-  const trashLabel = { client: "Client", deal: "Deal", referral: "Referral", invoice: "Invoice", txn: "Transaction" };
+  const trashLabel = { client: "Client", deal: "Deal", referral: "Referral", invoice: "Invoice", txn: "Accounting entry" };
   const trashName = (t) => {
     if (t.type === "client") return t.data.client.name || "—";
     if (t.type === "deal") return t.data.title || "—";
@@ -1214,7 +1244,7 @@ export default function App() {
         <main className={"main" + (menuOpen ? " blurred" : "")}>
           {view === "dashboard" && <Dashboard {...{ clients, deals, referrals, invoices, txns, settings, setView }} />}
           {view === "clients" && <Clients {...{ clients, setClients, deals, invoices, deleteClient }} />}
-          {view === "deals" && <Deals {...{ deals, setDeals, clients, trashIt }} />}
+          {view === "deals" && <Deals {...{ deals, setDeals, clients, trashIt, settings }} />}
           {view === "referrals" && <Referrals {...{ referrals, setReferrals, clients, trashIt }} />}
           {view === "invoices" && <Invoices {...{ invoices, setInvoices, clients, settings, setSettings, trashIt }} />}
           {view === "accounting" && <Accounting {...{ txns, setTxns, invoices, settings, trashIt }} />}
@@ -1246,10 +1276,13 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
     months.push({ name: new Date(year, m, 1).toLocaleDateString("en", { month: "short" }), v: Math.round(total) });
   }
   const hasData = clients.length || deals.length || invoices.length;
+  // "No income data" is distinct from the fully-empty-workspace case above:
+  // a business can have clients/deals but nothing invoiced yet this year.
+  const yearHasIncome = months.some((m) => m.v > 0);
 
   return (
     <>
-      <div className="head"><h1>Dashboard</h1><p>Velebit Consulting FZCO · Trade Licence {settings.company.licence} · {year} overview</p></div>
+      <div className="head"><h1>Dashboard</h1><p>Velebit Consulting FZCO · Trade Licence {settings.company.licence}</p></div>
       <div className="body">
         <div className="grid kpis">
           <KPI lab="Open pipeline" v={money(pipeline)} sub={openDeals.length + " active deals"} />
@@ -1270,21 +1303,25 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
           </div>
         ) : (
           <>
-            <div className="sectitle" style={{ marginTop: 26 }}><h2>Income by month</h2><span className="pill">{year}</span></div>
-            <div className="card" style={{ height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={months} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#33373E" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.mid }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: C.mid }} axisLine={false} tickLine={false} width={54}
-                    tickFormatter={(v) => v >= 1000 ? (v / 1000) + "k" : v} />
-                  <Tooltip formatter={(v) => money(v) + " " + settings.bank.currency} cursor={{ fill: "rgba(114,152,185,.10)" }} />
-                  <Bar dataKey="v" radius={[6, 6, 0, 0]}>
-                    {months.map((_, i) => <Cell key={i} fill={C.brandBlueMid} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <div className="sectitle" style={{ marginTop: 22 }}><h2>Income by month</h2><span className="pill">{year}</span></div>
+            {yearHasIncome ? (
+              <div className="card" style={{ height: 260 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={months} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#33373E" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.mid }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: C.mid }} axisLine={false} tickLine={false} width={54}
+                      tickFormatter={(v) => v >= 1000 ? (v / 1000) + "k" : v} />
+                    <Tooltip formatter={(v) => money(v) + " " + settings.bank.currency} cursor={{ fill: "rgba(114,152,185,.10)" }} />
+                    <Bar dataKey="v" radius={[6, 6, 0, 0]}>
+                      {months.map((_, i) => <Cell key={i} fill={C.brandBlueMid} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="card"><EmptyState title={"No invoiced income yet for " + year} /></div>
+            )}
 
             <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 20 }}>
               <div>
@@ -1293,11 +1330,20 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
                   {DEAL_STAGES.filter((s) => s !== "Lost").map((st) => {
                     const ds = deals.filter((d) => d.stage === st);
                     const val = ds.reduce((s, d) => s + num(d.value), 0);
+                    const max = Math.max(1, ...DEAL_STAGES.filter((s) => s !== "Lost").map((s2) => deals.filter((d) => d.stage === s2).reduce((s3, d) => s3 + num(d.value), 0)));
                     return (
-                      <div key={st} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 6px", borderBottom: "1px solid #33373E" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: 4, background: STAGE_COLOR[st] }} />{st}</span>
-                        <span className="num" style={{ fontSize: 13, color: C.charcoal }}>{money(val)} <span style={{ color: C.mid, fontSize: 11 }}>· {ds.length}</span></span>
+                      <div key={st} style={{ padding: "8px 6px", borderBottom: "1px solid #33373E" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 4, background: STAGE_COLOR[st] }} />{st}</span>
+                          <span style={{ textAlign: "right" }}>
+                            <div className="num" style={{ fontSize: 13, color: C.charcoal, fontWeight: 600 }}>{settings.bank.currency} {moneyCompact(val)}</div>
+                            <div style={{ fontSize: 10.5, color: C.mid }}>{ds.length} deal{ds.length === 1 ? "" : "s"}</div>
+                          </span>
+                        </div>
+                        <div style={{ height: 4, borderRadius: 2, background: "#33373E", marginTop: 6, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: (val / max * 100) + "%", background: STAGE_COLOR[st], borderRadius: 2 }} />
+                        </div>
                       </div>
                     );
                   })}
@@ -1314,7 +1360,7 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
                         <span className="num" style={{ fontSize: 13 }}>{money(i.t.total)}</span></span>
                     </div>
                   ))}
-                  {!invoices.length && <div style={{ color: C.mid, fontSize: 13, padding: 8 }}>No invoices yet.</div>}
+                  {!invoices.length && <EmptyState title="No invoices yet" />}
                 </div>
               </div>
             </div>
@@ -1328,66 +1374,127 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
 /* ------------------------------------------------------------ clients */
 function Clients({ clients, setClients, deals, invoices, deleteClient }) {
   const [edit, setEdit] = useState(null);
+  const [viewing, setViewing] = useState(null); // client being shown in the detail card
+  const [confirmDelete, setConfirmDelete] = useState(null); // client pending Move-to-Bin confirmation
   const [q, setQ] = useState("");
   const [sortMode, setSortMode] = useState("newest");
+  const [sortSheet, setSortSheet] = useState(false);
   const blank = { id: "", name: "", company: "", email: "", phone: "", phone2: "", country: "", notes: "" };
   const firstName = (n) => (n || "").trim().split(/\s+/)[0].toLowerCase();
   let list = clients.filter((c) => (c.name + c.company + c.email).toLowerCase().includes(q.toLowerCase())).slice();
   list = sortMode === "az"
     ? list.sort((a, b) => firstName(a.name).localeCompare(firstName(b.name)))
     : list.reverse();
-  const selStyle = { border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light };
+  const SORT_OPTIONS = [["newest", "Newest first"], ["az", "A–Z"]];
 
-  const remove = (id) => {
-    if (confirm("Delete this client? Their deals, referrals, and invoices will be moved to the bin too, and all restored together if you undo this.")) { const c = clients.find((x) => x.id === id); if (c) deleteClient(c); }
-  };
   const submit = () => {
     if (!edit.name.trim()) return alert("Name is required.");
     if (edit.id) setClients(clients.map((c) => c.id === edit.id ? edit : c));
     else setClients([...clients, { ...edit, id: uid() }]);
     setEdit(null);
   };
+  const doDelete = (c) => { deleteClient(c); setConfirmDelete(null); setViewing(null); };
+  const dealCount = (id) => deals.filter((d) => d.clientId === id).length;
+  const invCount = (id) => invoices.filter((i) => i.clientId === id).length;
 
   return (
     <>
-      <div className="head"><h1>Clients</h1><p>{clients.length} clients on record</p></div>
+      <div className="head"><h1>Clients</h1><p>{clients.length} client{clients.length === 1 ? "" : "s"}</p></div>
       <div className="body">
         <div className="sectitle">
           <div className="search"><Search size={15} color={C.mid} /><input placeholder="Search clients" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select style={selStyle} value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
-              <option value="newest">Newest first</option>
-              <option value="az">A–Z (first name)</option>
-            </select>
-            <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add client</button>
+            <button className="btn s" onClick={() => setSortSheet(true)}>Sort</button>
+            <button className="btn p" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add client</button>
           </div>
         </div>
-        {list.length ? (
-          <div className="tablewrap">
-            <table className="tbl">
-              <thead><tr><th>Name</th><th>Company</th><th>Contact</th><th>Deals</th><th>Invoiced</th><th></th></tr></thead>
-              <tbody>
-                {list.map((c) => {
-                  const dc = deals.filter((d) => d.clientId === c.id).length;
-                  const inv = invoices.filter((i) => i.clientId === c.id).length;
-                  return (
+
+        {/* Desktop: dense table */}
+        <div className="hide-mobile">
+          {list.length ? (
+            <div className="tablewrap">
+              <table className="tbl">
+                <thead><tr><th>Name</th><th>Company</th><th>Contact</th><th>Deals</th><th>Invoiced</th><th></th></tr></thead>
+                <tbody>
+                  {list.map((c) => (
                     <tr key={c.id}>
                       <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{c.name}</td>
                       <td>{c.company || "—"}</td>
                       <td><div style={{ fontSize: 12.5 }}>{c.email}</div><div style={{ fontSize: 12, color: C.mid }}>{c.phone}</div>{c.phone2 && <div style={{ fontSize: 12, color: C.mid }}>{c.phone2}</div>}</td>
-                      <td>{dc}</td><td>{inv}</td>
+                      <td>{dealCount(c.id)}</td><td>{invCount(c.id)}</td>
                       <td><div className="rowact">
                         <button className="iconbtn" onClick={() => setEdit(c)}><Pencil size={14} /></button>
-                        <button className="iconbtn del" onClick={() => remove(c.id)}><Trash2 size={14} /></button>
+                        <button className="iconbtn del" onClick={() => setConfirmDelete(c)}><Trash2 size={14} /></button>
                       </div></td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : <div className="card empty"><div className="disp">No clients yet</div><p>Add your first client to start tracking deals and invoices.</p></div>}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="card empty"><div className="disp">No clients yet</div><p>Add your first client to start tracking deals and invoices.</p></div>}
+        </div>
+
+        {/* Mobile: scannable cards, full detail is one tap away */}
+        <div className="hide-desktop">
+          {list.length ? list.map((c) => (
+            <MobileCard
+              key={c.id}
+              onTap={() => setViewing(c)}
+              top={c.name}
+              sub={c.company || undefined}
+              rows={[
+                { k: "Contact", v: c.email || c.phone || "—" },
+                { k: "Deals · Invoiced", v: dealCount(c.id) + " · " + invCount(c.id) },
+              ]}
+            />
+          )) : <div className="card empty"><div className="disp">No clients yet</div><p>Add your first client to start tracking deals and invoices.</p></div>}
+        </div>
       </div>
+
+      {sortSheet && (
+        <Modal title="Sort clients" onClose={() => setSortSheet(false)} sheet>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {SORT_OPTIONS.map(([val, label]) => (
+              <button
+                key={val}
+                className="actionmenu-item"
+                style={{ justifyContent: "space-between", background: sortMode === val ? "rgba(114,152,185,.15)" : "transparent" }}
+                onClick={() => { setSortMode(val); setSortSheet(false); }}
+              >
+                <span>{label}</span>{sortMode === val && <Check size={14} color={C.brandBlueDark} />}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {viewing && (
+        <Modal
+          title="Client"
+          onClose={() => setViewing(null)}
+          footer={
+            <ActionMenu
+              ariaLabel="Client actions"
+              actions={[
+                { label: "Edit", icon: Pencil, onSelect: () => { setEdit(viewing); setViewing(null); } },
+                { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
+              ]}
+            />
+          }
+        >
+          <div className="detailcard">
+            <DetailSection label="Name">{viewing.name || "—"}</DetailSection>
+            <DetailSection label="Company">{viewing.company || "—"}</DetailSection>
+            <DetailSection label="Email">{viewing.email || "—"}</DetailSection>
+            <DetailSection label="Phone">{viewing.phone || "—"}</DetailSection>
+            <DetailSection label="Additional phone">{viewing.phone2 || "—"}</DetailSection>
+            <DetailSection label="Country / jurisdiction">{viewing.country || "—"}</DetailSection>
+            <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
+            <DetailSection label="Deal summary">{dealCount(viewing.id)} deal{dealCount(viewing.id) === 1 ? "" : "s"}</DetailSection>
+            <DetailSection label="Invoice summary">{invCount(viewing.id)} invoice{invCount(viewing.id) === 1 ? "" : "s"}</DetailSection>
+          </div>
+        </Modal>
+      )}
 
       {edit && (
         <Modal title={edit.id ? "Edit client" : "Add client"} onClose={() => setEdit(null)}
@@ -1401,15 +1508,30 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
           <Field label="Notes"><textarea rows={3} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
         </Modal>
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Move client to Bin?"
+          message={"Move \"" + confirmDelete.name + "\" to Bin? Their deals, referrals, and invoices will be moved to the Bin too, and all restored together if you undo this."}
+          confirmLabel="Move to Bin"
+          danger
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => doDelete(confirmDelete)}
+        />
+      )}
     </>
   );
 }
 
 /* -------------------------------------------------------------- deals */
-function Deals({ deals, setDeals, clients, trashIt }) {
+function Deals({ deals, setDeals, clients, trashIt, settings }) {
   const [edit, setEdit] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [serviceFilter, setServiceFilter] = useState("all");
   const [stageFilter, setStageFilter] = useState("all");
+  const [serviceSheet, setServiceSheet] = useState(false);
+  const [stageSheet, setStageSheet] = useState(false);
   const blank = { id: "", clientId: "", title: "", service: SERVICES[0], value: "", stage: "Lead", closeDate: "", notes: "" };
   const cname = (id) => clients.find((c) => c.id === id)?.name || "—";
   const submit = () => {
@@ -1418,53 +1540,124 @@ function Deals({ deals, setDeals, clients, trashIt }) {
     else setDeals([...deals, { ...edit, id: uid() }]);
     setEdit(null);
   };
+  const doDelete = (d) => {
+    trashIt("deal", { ...d, _clientName: cname(d.clientId) });
+    setDeals(deals.filter((x) => x.id !== d.id));
+    setConfirmDelete(null);
+    setViewing(null);
+  };
   const total = deals.filter((d) => !["Won", "Lost"].includes(d.stage)).reduce((s, d) => s + num(d.value), 0);
   const filtered = deals
     .filter((d) => serviceFilter === "all" || d.service === serviceFilter)
     .filter((d) => stageFilter === "all" || d.stage === stageFilter);
-  const selStyle = { border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light };
+  const currency = settings?.bank?.currency || "AED";
 
   return (
     <>
-      <div className="head"><h1>Deals</h1><p>{deals.length} deals · {money(total)} open pipeline</p></div>
+      <div className="head"><h1>Deals</h1><p>{deals.length} deal{deals.length === 1 ? "" : "s"} · {currency} {moneyCompact(total)} open pipeline</p></div>
       <div className="body">
-        <div className="sectitle"><h2 style={{ fontSize: 16, color: C.mid, fontFamily: "Montserrat", fontWeight: 600 }}>Pipeline</h2>
+        <div className="sectitle">
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select style={selStyle} value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
-              <option value="all">All services</option>
-              {SERVICES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select style={selStyle} value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
-              <option value="all">All stages</option>
-              {DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add deal</button>
+            <button className="btn s" onClick={() => setServiceSheet(true)}>{serviceFilter === "all" ? "All services" : serviceFilter}</button>
+            <button className="btn s" onClick={() => setStageSheet(true)}>{stageFilter === "all" ? "All stages" : stageFilter}</button>
           </div>
+          <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add deal</button>
         </div>
-        {filtered.length ? (
-          <div className="tablewrap">
-            <table className="tbl">
-              <thead><tr><th>Deal</th><th>Client</th><th>Service</th><th className="num">Value</th><th>Stage</th><th>Close</th><th></th></tr></thead>
-              <tbody>
-                {filtered.slice().reverse().map((d) => (
-                  <tr key={d.id}>
-                    <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{d.title}</td>
-                    <td>{cname(d.clientId)}</td>
-                    <td style={{ fontSize: 12.5, color: C.mid }}>{d.service}</td>
-                    <td className="num">{money(d.value)}</td>
-                    <td><Tag label={d.stage} color={STAGE_COLOR[d.stage]} /></td>
-                    <td style={{ fontSize: 12.5 }}>{fmtDate(d.closeDate)}</td>
-                    <td><div className="rowact">
-                      <button className="iconbtn" onClick={() => setEdit(d)}><Pencil size={14} /></button>
-                      <button className="iconbtn del" onClick={() => { if (confirm("Delete this deal?")) { trashIt("deal", { ...d, _clientName: cname(d.clientId) }); setDeals(deals.filter((x) => x.id !== d.id)); } }}><Trash2 size={14} /></button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <div className="card empty"><div className="disp">{deals.length ? "No deals match your filters" : "No deals yet"}</div><p>{deals.length ? "Try a different service or stage." : "Track opportunities from first contact through to won."}</p></div>}
+
+        <div className="hide-mobile">
+          {filtered.length ? (
+            <div className="tablewrap">
+              <table className="tbl">
+                <thead><tr><th>Deal</th><th>Client</th><th>Service</th><th className="num">Value</th><th>Stage</th><th>Close</th><th></th></tr></thead>
+                <tbody>
+                  {filtered.slice().reverse().map((d) => (
+                    <tr key={d.id}>
+                      <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{d.title}</td>
+                      <td>{cname(d.clientId)}</td>
+                      <td style={{ fontSize: 12.5, color: C.mid }}>{d.service}</td>
+                      <td className="num">{money(d.value)}</td>
+                      <td><Tag label={d.stage} color={STAGE_COLOR[d.stage]} /></td>
+                      <td style={{ fontSize: 12.5 }}>{fmtDate(d.closeDate)}</td>
+                      <td><div className="rowact">
+                        <button className="iconbtn" onClick={() => setEdit(d)}><Pencil size={14} /></button>
+                        <button className="iconbtn del" onClick={() => setConfirmDelete(d)}><Trash2 size={14} /></button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="card empty"><div className="disp">{deals.length ? "No deals match your filters" : "No deals yet"}</div><p>{deals.length ? "Try a different service or stage." : "Track opportunities from first contact through to won."}</p></div>}
+        </div>
+
+        <div className="hide-desktop">
+          {filtered.length ? filtered.slice().reverse().map((d) => (
+            <MobileCard
+              key={d.id}
+              onTap={() => setViewing(d)}
+              top={d.title}
+              sub={cname(d.clientId)}
+              rows={[
+                { k: "Service", v: d.service },
+                { k: "Value", v: currency + " " + money(d.value) },
+                { k: "Close", v: fmtDate(d.closeDate) || "—" },
+              ]}
+              menu={<Tag label={d.stage} color={STAGE_COLOR[d.stage]} />}
+            />
+          )) : <div className="card empty"><div className="disp">{deals.length ? "No deals match your filters" : "No deals yet"}</div><p>{deals.length ? "Try a different service or stage." : "Track opportunities from first contact through to won."}</p></div>}
+        </div>
       </div>
+
+      {serviceSheet && (
+        <Modal title="Service" onClose={() => setServiceSheet(false)} sheet>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "60vh", overflow: "auto" }}>
+            {[["all", "All services"], ...SERVICES.map((s) => [s, s])].map(([val, label]) => (
+              <button key={val} className="actionmenu-item" style={{ justifyContent: "space-between", background: serviceFilter === val ? "rgba(114,152,185,.15)" : "transparent" }}
+                onClick={() => { setServiceFilter(val); setServiceSheet(false); }}>
+                <span>{label}</span>{serviceFilter === val && <Check size={14} color={C.brandBlueDark} />}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {stageSheet && (
+        <Modal title="Stage" onClose={() => setStageSheet(false)} sheet>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {[["all", "All stages"], ...DEAL_STAGES.map((s) => [s, s])].map(([val, label]) => (
+              <button key={val} className="actionmenu-item" style={{ justifyContent: "space-between", background: stageFilter === val ? "rgba(114,152,185,.15)" : "transparent" }}
+                onClick={() => { setStageFilter(val); setStageSheet(false); }}>
+                <span>{label}</span>{stageFilter === val && <Check size={14} color={C.brandBlueDark} />}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {viewing && (
+        <Modal
+          title="Deal"
+          onClose={() => setViewing(null)}
+          footer={
+            <ActionMenu
+              ariaLabel="Deal actions"
+              actions={[
+                { label: "Edit", icon: Pencil, onSelect: () => { setEdit(viewing); setViewing(null); } },
+                { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
+              ]}
+            />
+          }
+        >
+          <div className="detailcard">
+            <DetailSection label="Title">{viewing.title || "—"}</DetailSection>
+            <DetailSection label="Client">{cname(viewing.clientId)}</DetailSection>
+            <DetailSection label="Service">{viewing.service || "—"}</DetailSection>
+            <DetailSection label="Value">{currency} {money(viewing.value)}</DetailSection>
+            <DetailSection label="Stage"><Tag label={viewing.stage} color={STAGE_COLOR[viewing.stage]} /></DetailSection>
+            <DetailSection label="Expected close">{fmtDate(viewing.closeDate) || "—"}</DetailSection>
+            <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
+          </div>
+        </Modal>
+      )}
 
       {edit && (
         <Modal title={edit.id ? "Edit deal" : "Add deal"} onClose={() => setEdit(null)}
@@ -1484,6 +1677,17 @@ function Deals({ deals, setDeals, clients, trashIt }) {
           <Field label="Notes"><textarea rows={3} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
         </Modal>
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Move deal to Bin?"
+          message={"Move \"" + confirmDelete.title + "\" to Bin? You can restore it later from the Bin."}
+          confirmLabel="Move to Bin"
+          danger
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => doDelete(confirmDelete)}
+        />
+      )}
     </>
   );
 }
@@ -1491,6 +1695,9 @@ function Deals({ deals, setDeals, clients, trashIt }) {
 /* ---------------------------------------------------------- referrals */
 function Referrals({ referrals, setReferrals, clients, trashIt }) {
   const [edit, setEdit] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const blank = { id: "", clientId: "", broker: "ARP Digital", service: "", dealValue: "", feeExpected: "", feeReceived: "", status: "Referred", referralDate: today(), paidDate: "", notes: "" };
   const cname = (id) => clients.find((c) => c.id === id)?.name || "—";
   const submit = () => {
@@ -1498,51 +1705,124 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
     else setReferrals([...referrals, { ...edit, id: uid() }]);
     setEdit(null);
   };
+  const doDelete = (r) => {
+    trashIt("referral", { ...r, _clientName: cname(r.clientId) });
+    setReferrals(referrals.filter((x) => x.id !== r.id));
+    setConfirmDelete(null);
+    setViewing(null);
+  };
   const pending = referrals.filter((r) => !["Paid", "Declined"].includes(r.status)).reduce((s, r) => s + num(r.feeExpected), 0);
   const received = referrals.reduce((s, r) => s + num(r.feeReceived), 0);
+  // Lightweight broker-dealer suggestions: distinct previously used names,
+  // case-insensitive dedupe, first-seen casing kept. No separate broker
+  // database/management screen — this is purely derived from referrals.
+  const brokerSuggestions = Array.from(
+    new Map(referrals.map((r) => [(r.broker || "").trim().toLowerCase(), (r.broker || "").trim()])).values()
+  ).filter(Boolean);
 
   return (
     <>
-      <div className="head"><h1>Broker-dealer referrals</h1><p>Clients referred to broker-dealers · {money(pending)} fees pending · {money(received)} received</p></div>
-      <div className="body">
-        <div className="note" style={{ marginBottom: 16 }}><AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-          Internal tracking only. Velebit’s involvement isn’t referenced in any broker-facing materials.</div>
-        <div className="sectitle"><span className="pill">{referrals.length} referrals</span>
-          <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add referral</button></div>
-        {referrals.length ? (
-          <div className="tablewrap">
-            <table className="tbl">
-              <thead><tr><th>Client</th><th>Broker-dealer</th><th className="num">Deal value</th><th className="num">Fee expected</th><th className="num">Fee received</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {referrals.slice().reverse().map((r) => (
-                  <tr key={r.id}>
-                    <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{cname(r.clientId)}</td>
-                    <td>{r.broker}</td>
-                    <td className="num">{money(r.dealValue)}</td>
-                    <td className="num">{money(r.feeExpected)}</td>
-                    <td className="num" style={{ color: num(r.feeReceived) ? OK : C.mid }}>{money(r.feeReceived)}</td>
-                    <td><Tag label={r.status} color={REF_COLOR[r.status]} /></td>
-                    <td><div className="rowact">
-                      <button className="iconbtn" onClick={() => setEdit(r)}><Pencil size={14} /></button>
-                      <button className="iconbtn del" onClick={() => { if (confirm("Delete this referral?")) { trashIt("referral", { ...r, _clientName: cname(r.clientId) }); setReferrals(referrals.filter((x) => x.id !== r.id)); } }}><Trash2 size={14} /></button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <div className="card empty"><div className="disp">No referrals yet</div><p>Log clients you refer to a broker-dealer and track the fee through to payment.</p></div>}
+      <div className="head">
+        <h1>Broker-dealer referrals</h1>
+        <p>{referrals.length} referral{referrals.length === 1 ? "" : "s"} · AED {money(pending)} pending · AED {money(received)} received</p>
       </div>
+      <div className="body">
+        <div className="note" style={{ marginBottom: 14 }}><AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          Internal tracking only. Velebit’s involvement isn’t referenced in any broker-facing materials.</div>
+        <div className="sectitle" style={{ justifyContent: "flex-end" }}>
+          <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add referral</button>
+        </div>
+
+        <div className="hide-mobile">
+          {referrals.length ? (
+            <div className="tablewrap">
+              <table className="tbl">
+                <thead><tr><th>Client</th><th>Broker-dealer</th><th className="num">Deal value</th><th className="num">Fee expected</th><th className="num">Fee received</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  {referrals.slice().reverse().map((r) => (
+                    <tr key={r.id}>
+                      <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{cname(r.clientId)}</td>
+                      <td>{r.broker}</td>
+                      <td className="num">{money(r.dealValue)}</td>
+                      <td className="num">{money(r.feeExpected)}</td>
+                      <td className="num" style={{ color: num(r.feeReceived) ? OK : C.mid }}>{money(r.feeReceived)}</td>
+                      <td><Tag label={r.status} color={REF_COLOR[r.status]} /></td>
+                      <td><div className="rowact">
+                        <button className="iconbtn" onClick={() => setEdit(r)}><Pencil size={14} /></button>
+                        <button className="iconbtn del" onClick={() => setConfirmDelete(r)}><Trash2 size={14} /></button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="card empty"><div className="disp">No referrals yet</div><p>Log clients you refer to a broker-dealer and track the fee through to payment.</p></div>}
+        </div>
+
+        <div className="hide-desktop">
+          {referrals.length ? referrals.slice().reverse().map((r) => (
+            <MobileCard
+              key={r.id}
+              onTap={() => setViewing(r)}
+              top={cname(r.clientId)}
+              sub={r.broker}
+              rows={[
+                { k: "Deal value", v: money(r.dealValue) },
+                { k: "Fee expected", v: money(r.feeExpected) },
+                { k: "Fee received", v: money(r.feeReceived) },
+              ]}
+              menu={<Tag label={r.status} color={REF_COLOR[r.status]} />}
+            />
+          )) : <div className="card empty"><div className="disp">No referrals yet</div><p>Log clients you refer to a broker-dealer and track the fee through to payment.</p></div>}
+        </div>
+      </div>
+
+      {viewing && (
+        <Modal
+          title="Referral"
+          onClose={() => setViewing(null)}
+          footer={
+            <ActionMenu
+              ariaLabel="Referral actions"
+              actions={[
+                { label: "Edit", icon: Pencil, onSelect: () => { setEdit(viewing); setViewing(null); } },
+                { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
+              ]}
+            />
+          }
+        >
+          <div className="detailcard">
+            <DetailSection label="Client">{cname(viewing.clientId)}</DetailSection>
+            <DetailSection label="Broker-dealer">{viewing.broker || "—"}</DetailSection>
+            <DetailSection label="Service or product">{viewing.service || "—"}</DetailSection>
+            <DetailSection label="Deal value">{money(viewing.dealValue)}</DetailSection>
+            <DetailSection label="Fee expected">{money(viewing.feeExpected)}</DetailSection>
+            <DetailSection label="Fee received">{money(viewing.feeReceived)}</DetailSection>
+            <DetailSection label="Status"><Tag label={viewing.status} color={REF_COLOR[viewing.status]} /></DetailSection>
+            <DetailSection label="Referral date">{fmtDate(viewing.referralDate) || "—"}</DetailSection>
+            <DetailSection label="Fee paid date">{fmtDate(viewing.paidDate) || "—"}</DetailSection>
+            <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
+          </div>
+        </Modal>
+      )}
 
       {edit && (
         <Modal title={edit.id ? "Edit referral" : "Add referral"} onClose={() => setEdit(null)}
           footer={<><button className="btn s" onClick={() => setEdit(null)}>Cancel</button><button className="btn p" onClick={submit}><Check size={15} />Save</button></>}>
           <div className="frow">
-            <Field label="Client"><select value={edit.clientId} onChange={(e) => setEdit({ ...edit, clientId: e.target.value })}>
-              <option value="">— select —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-            <Field label="Broker-dealer"><input value={edit.broker} onChange={(e) => setEdit({ ...edit, broker: e.target.value })} /></Field>
+            <Field label="Client">
+              <button type="button" className="btn s" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => setPickerOpen(true)}>
+                {cname(edit.clientId) !== "—" ? cname(edit.clientId) : "— select —"}
+              </button>
+            </Field>
+            <Field label="Broker-dealer">
+              <input list="broker-suggestions" value={edit.broker} onChange={(e) => setEdit({ ...edit, broker: e.target.value })} />
+              <datalist id="broker-suggestions">
+                {brokerSuggestions.map((b) => <option key={b} value={b} />)}
+              </datalist>
+            </Field>
           </div>
-          <Field label="Service / product referred"><input value={edit.service} onChange={(e) => setEdit({ ...edit, service: e.target.value })} placeholder="e.g. Brokerage onboarding" /></Field>
+          <Field label="Service or product"><input value={edit.service} onChange={(e) => setEdit({ ...edit, service: e.target.value })} placeholder="e.g. Brokerage onboarding" /></Field>
           <div className="frow">
             <Field label="Deal value (AED)"><input type="number" value={edit.dealValue} onChange={(e) => setEdit({ ...edit, dealValue: e.target.value })} /></Field>
             <Field label="Fee expected (AED)"><input type="number" value={edit.feeExpected} onChange={(e) => setEdit({ ...edit, feeExpected: e.target.value })} /></Field>
@@ -1557,6 +1837,26 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
           </div>
           <Field label="Notes"><textarea rows={3} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
         </Modal>
+      )}
+
+      {pickerOpen && edit && (
+        <ClientPicker
+          clients={clients}
+          value={edit.clientId}
+          onSelect={(id) => setEdit({ ...edit, clientId: id })}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Move referral to Bin?"
+          message={"Move the referral for \"" + cname(confirmDelete.clientId) + "\" (" + (confirmDelete.broker || "broker-dealer") + ") to Bin? You can restore it later from the Bin."}
+          confirmLabel="Move to Bin"
+          danger
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => doDelete(confirmDelete)}
+        />
       )}
     </>
   );
@@ -1799,6 +2099,9 @@ function Row({ l, a, big, owing }) {
 /* --------------------------------------------------------- accounting */
 function Accounting({ txns, setTxns, invoices, settings, trashIt }) {
   const [edit, setEdit] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [categorySheet, setCategorySheet] = useState(false);
   const [yr, setYr] = useState(String(new Date().getFullYear()));
   const blank = { id: "", date: today(), type: "expense", category: EXP_CATS[0], description: "", amount: "", vat: "", notes: "" };
 
@@ -1817,63 +2120,161 @@ function Accounting({ txns, setTxns, invoices, settings, trashIt }) {
     else setTxns([...txns, { ...edit, id: uid() }]);
     setEdit(null);
   };
+  const doDelete = (t) => {
+    trashIt("txn", t);
+    setTxns(txns.filter((x) => x.id !== t.id));
+    setConfirmDelete(null);
+    setViewing(null);
+  };
 
   return (
     <>
-      <div className="head"><h1>Accounting</h1><p>Income from invoices plus manual expenses · net position by year</p></div>
+      <div className="head"><h1>Accounting</h1><p>Income, expenses and net position by year</p></div>
       <div className="body">
-        <div className="grid kpis">
-          <KPI lab={"Income " + yr} v={money(income)} sub="Net of VAT" />
-          <KPI lab={"Expenses " + yr} v={money(expense)} sub={txns.filter((t) => yearOf(t.date) === yr).length + " entries"} />
-          <KPI lab={"Net " + yr} v={money(income - expense)} sub="Before Corporate Tax" />
-        </div>
-        <div className="sectitle" style={{ marginTop: 22 }}>
+        <div className="sectitle" style={{ marginTop: 0 }}>
           <select value={yr} onChange={(e) => setYr(e.target.value)} style={{ border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light }}>
             {years.map((y) => <option key={y}>{y}</option>)}
           </select>
-          <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add expense</button>
+          <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add entry</button>
         </div>
-        <div className="tablewrap">
-          <table className="tbl">
-            <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Detail</th><th className="num">Amount</th><th className="num">VAT</th><th></th></tr></thead>
-            <tbody>
-              {all.map((t) => (
-                <tr key={t.id}>
-                  <td style={{ fontSize: 12.5 }}>{fmtDate(t.date)}</td>
-                  <td><Tag label={t.type === "income" ? "Income" : "Expense"} color={t.type === "income" ? OK_BG : C.brandBlueLt} /></td>
-                  <td style={{ fontSize: 12.5 }}>{t.category}</td>
-                  <td>{t.description}</td>
-                  <td className="num">{money(t.amount)}</td>
-                  <td className="num" style={{ color: C.mid }}>{money(t.vat)}</td>
-                  <td><div className="rowact">
-                    {t.locked ? <span className="pill" style={{ fontSize: 11 }}>auto</span> : <>
-                      <button className="iconbtn" onClick={() => setEdit(t)}><Pencil size={14} /></button>
-                      <button className="iconbtn del" onClick={() => { if (confirm("Delete this entry?")) { trashIt("txn", t); setTxns(txns.filter((x) => x.id !== t.id)); } }}><Trash2 size={14} /></button>
-                    </>}
-                  </div></td>
-                </tr>
-              ))}
-              {!all.length && <tr><td colSpan={7} className="empty" style={{ padding: 30 }}>No entries for {yr}.</td></tr>}
-            </tbody>
-          </table>
+
+        <div className="card" style={{ marginBottom: 6 }}>
+          <div style={{ display: "flex", gap: 20 }}>
+            <div style={{ flex: 1 }}>
+              <div className="lab" style={{ fontSize: 11, letterSpacing: .6, textTransform: "uppercase", color: C.mid, fontWeight: 600 }}>Income {yr}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: C.brandBlueDark, marginTop: 4 }}>{money(income)}</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="lab" style={{ fontSize: 11, letterSpacing: .6, textTransform: "uppercase", color: C.mid, fontWeight: 600 }}>Expenses {yr}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: C.brandBlueDark, marginTop: 4 }}>{money(expense)}</div>
+            </div>
+          </div>
+          <div style={{ height: 1, background: C.warmgray, margin: "12px 0" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12.5, color: C.mid }}>Net before Corporate Tax</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: C.charcoal }}>{money(income - expense)}</span>
+          </div>
+        </div>
+
+        <div className="hide-mobile">
+          <div className="tablewrap">
+            <table className="tbl">
+              <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Detail</th><th className="num">Amount</th><th className="num">VAT</th><th></th></tr></thead>
+              <tbody>
+                {all.map((t) => (
+                  <tr key={t.id}>
+                    <td style={{ fontSize: 12.5 }}>{fmtDate(t.date)}</td>
+                    <td><Tag label={t.type === "income" ? "Income" : "Expense"} color={t.type === "income" ? OK_BG : C.brandBlueLt} /></td>
+                    <td style={{ fontSize: 12.5 }}>{t.category}</td>
+                    <td>{t.description}</td>
+                    <td className="num">{money(t.amount)}</td>
+                    <td className="num" style={{ color: C.mid }}>{money(t.vat)}</td>
+                    <td><div className="rowact">
+                      {t.locked ? <span className="pill" style={{ fontSize: 11 }}>auto</span> : <>
+                        <button className="iconbtn" onClick={() => setEdit(t)}><Pencil size={14} /></button>
+                        <button className="iconbtn del" onClick={() => setConfirmDelete(t)}><Trash2 size={14} /></button>
+                      </>}
+                    </div></td>
+                  </tr>
+                ))}
+                {!all.length && <tr><td colSpan={7} className="empty" style={{ padding: 30 }}>No accounting entries for {yr}.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="hide-desktop">
+          {all.length ? all.map((t) => (
+            <MobileCard
+              key={t.id}
+              onTap={t.locked ? undefined : () => setViewing(t)}
+              top={t.category}
+              sub={t.description}
+              rows={[
+                { k: "Date", v: fmtDate(t.date) || "—" },
+                { k: "Amount", v: money(t.amount) },
+                ...(num(t.vat) ? [{ k: "VAT paid", v: money(t.vat) }] : []),
+              ]}
+              menu={t.locked
+                ? <span className="pill" style={{ fontSize: 11 }}>auto</span>
+                : <Tag label={t.type === "income" ? "Income" : "Expense"} color={t.type === "income" ? OK_BG : C.brandBlueLt} />}
+            />
+          )) : <div className="card"><EmptyState title={"No accounting entries for " + yr} /></div>}
         </div>
       </div>
 
+      {viewing && (
+        <Modal
+          title="Accounting entry"
+          onClose={() => setViewing(null)}
+          footer={
+            <ActionMenu
+              ariaLabel="Entry actions"
+              actions={[
+                { label: "Edit", icon: Pencil, onSelect: () => { setEdit(viewing); setViewing(null); } },
+                { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
+              ]}
+            />
+          }
+        >
+          <div className="detailcard">
+            <DetailSection label="Type">{viewing.type === "income" ? "Income" : "Expense"}</DetailSection>
+            <DetailSection label="Category">{viewing.category || "—"}</DetailSection>
+            <DetailSection label="Description">{viewing.description || "—"}</DetailSection>
+            <DetailSection label="Date">{fmtDate(viewing.date) || "—"}</DetailSection>
+            <DetailSection label="Amount">{money(viewing.amount)}</DetailSection>
+            <DetailSection label="VAT paid">{money(viewing.vat)}</DetailSection>
+            <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
+          </div>
+        </Modal>
+      )}
+
       {edit && (
-        <Modal title={edit.id ? "Edit expense" : "Add expense"} onClose={() => setEdit(null)}
+        <Modal title={edit.id ? "Edit entry" : "Add entry"} onClose={() => setEdit(null)}
           footer={<><button className="btn s" onClick={() => setEdit(null)}>Cancel</button><button className="btn p" onClick={submit}><Check size={15} />Save</button></>}>
           <div className="frow">
             <Field label="Date"><input type="date" value={edit.date} onChange={(e) => setEdit({ ...edit, date: e.target.value })} /></Field>
-            <Field label="Type"><select value={edit.type} onChange={(e) => setEdit({ ...edit, type: e.target.value })}><option value="expense">Expense</option><option value="income">Income (other)</option></select></Field>
+            <Field label="Type">
+              <div className="segctrl">
+                <button type="button" className={edit.type === "expense" ? "on" : ""} onClick={() => setEdit({ ...edit, type: "expense" })}>Expense</button>
+                <button type="button" className={edit.type === "income" ? "on" : ""} onClick={() => setEdit({ ...edit, type: "income" })}>Income</button>
+              </div>
+            </Field>
           </div>
-          <Field label="Category"><select value={edit.category} onChange={(e) => setEdit({ ...edit, category: e.target.value })}>{EXP_CATS.map((c) => <option key={c}>{c}</option>)}</select></Field>
+          <Field label="Category">
+            <button type="button" className="btn s" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => setCategorySheet(true)}>{edit.category}</button>
+          </Field>
           <Field label="Description"><input value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
           <div className="frow">
-            <Field label="Amount (AED, net)"><input type="number" value={edit.amount} onChange={(e) => setEdit({ ...edit, amount: e.target.value })} /></Field>
-            <Field label="VAT paid (AED)"><input type="number" value={edit.vat} onChange={(e) => setEdit({ ...edit, vat: e.target.value })} /></Field>
+            <Field label="Amount (AED, net)"><MoneyInput value={edit.amount} onChange={(v) => setEdit({ ...edit, amount: v })} placeholder="0.00" /></Field>
+            <Field label="VAT paid (AED)"><MoneyInput value={edit.vat} onChange={(v) => setEdit({ ...edit, vat: v })} placeholder="0.00" /></Field>
           </div>
           <Field label="Notes"><textarea rows={2} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
         </Modal>
+      )}
+
+      {categorySheet && edit && (
+        <Modal title="Category" onClose={() => setCategorySheet(false)} sheet>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "60vh", overflow: "auto" }}>
+            {EXP_CATS.map((c) => (
+              <button key={c} className="actionmenu-item" style={{ justifyContent: "space-between", background: edit.category === c ? "rgba(114,152,185,.15)" : "transparent" }}
+                onClick={() => { setEdit({ ...edit, category: c }); setCategorySheet(false); }}>
+                <span>{c}</span>{edit.category === c && <Check size={14} color={C.brandBlueDark} />}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Move entry to Bin?"
+          message={"Move this " + (confirmDelete.type === "income" ? "income" : "expense") + " entry (" + (confirmDelete.description || confirmDelete.category) + ") to Bin? You can restore it later from the Bin."}
+          confirmLabel="Move to Bin"
+          danger
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => doDelete(confirmDelete)}
+        />
       )}
     </>
   );
@@ -1909,53 +2310,72 @@ function Tax({ invoices, txns, settings }) {
     <>
       <div className="head"><h1>Tax & VAT</h1><p>Output/input VAT by quarter and a Corporate Tax estimate</p></div>
       <div className="body">
-        <div className="sectitle"><h2 style={{ fontSize: 16, color: C.mid, fontFamily: "Montserrat", fontWeight: 600 }}>Tax year</h2>
+        <div className="sectitle" style={{ marginTop: 0 }}><h2 style={{ fontSize: 16, color: C.mid, fontFamily: "Montserrat", fontWeight: 600 }}>Tax year</h2>
           <select value={yr} onChange={(e) => setYr(e.target.value)} style={{ border: "1px solid " + C.brandBlueLt, borderRadius: 9, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", background: C.brandBlueLt, color: C.light }}>{years.map((y) => <option key={y}>{y}</option>)}</select></div>
 
-        <div className="note" style={{ marginBottom: 18 }}><AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-          Estimates for internal planning only — not tax advice. Velebit is not a registered tax agent; confirm filings with a registered tax agent or the FTA. VAT registration is required once taxable turnover exceeds AED 375,000; only charge VAT once registered.</div>
+        <div className="note" style={{ marginBottom: 16 }}><AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          Internal estimate only. Confirm VAT and Corporate Tax obligations with the FTA or your tax adviser. VAT registration is required once taxable turnover exceeds AED 375,000.</div>
 
-        <div className="sectitle"><h2>VAT summary {yr}</h2><span className="pill">Output {money(outYr)} · Input {money(inYr)} · Net {money(outYr - inYr)}</span></div>
-        <div className="tablewrap">
-          <table className="tbl">
-            <thead><tr><th>Quarter</th><th className="num">Output VAT (on sales)</th><th className="num">Input VAT (on expenses)</th><th className="num">Net VAT payable</th></tr></thead>
-            <tbody>
-              {quarters.map((q) => (
-                <tr key={q.qn}>
-                  <td style={{ fontWeight: 600 }}>Q{q.qn} {yr}</td>
-                  <td className="num">{money(q.output)}</td>
-                  <td className="num" style={{ color: C.mid }}>{money(q.input)}</td>
-                  <td className="num" style={{ fontWeight: 700, color: q.net > 0 ? C.brandBlueDark : OK }}>{money(q.net)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="sectitle"><h2>VAT summary {yr}</h2></div>
+        <p className="pill" style={{ marginTop: -4, marginBottom: 10 }}>Output {moneyAED(outYr)} · Input {moneyAED(inYr)} · Net {moneyAED(outYr - inYr)}</p>
+
+        <div className="hide-mobile">
+          <div className="tablewrap">
+            <table className="tbl">
+              <thead><tr><th>Quarter</th><th className="num">Output VAT (on sales)</th><th className="num">Input VAT (on expenses)</th><th className="num">Net VAT payable</th></tr></thead>
+              <tbody>
+                {quarters.map((q) => (
+                  <tr key={q.qn}>
+                    <td style={{ fontWeight: 600 }}>Q{q.qn} {yr}</td>
+                    <td className="num">{moneyAED(q.output)}</td>
+                    <td className="num" style={{ color: C.mid }}>{moneyAED(q.input)}</td>
+                    <td className="num" style={{ fontWeight: 700, color: q.net > 0 ? C.brandBlueDark : OK }}>{moneyAED(q.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="hide-desktop">
+          {quarters.map((q) => (
+            <div className="mcard" key={q.qn}>
+              <div className="mcard-title">Q{q.qn} {yr}</div>
+              <div className="mcard-rows">
+                <div className="mcard-row"><span className="k">Output VAT</span><span className="v">{moneyAED(q.output)}</span></div>
+                <div className="mcard-row"><span className="k">Input VAT</span><span className="v">{moneyAED(q.input)}</span></div>
+                <div className="mcard-row"><span className="k">Net payable</span><span className="v" style={{ fontWeight: 700, color: q.net > 0 ? C.brandBlueDark : OK }}>{moneyAED(q.net)}</span></div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        <div className="sectitle" style={{ marginTop: 26 }}><h2>Corporate Tax estimate {yr}</h2></div>
+        <div className="sectitle" style={{ marginTop: 22 }}><h2>Corporate Tax estimate {yr}</h2></div>
         <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <div className="card">
-            <Line l="Revenue (net of VAT)" v={money(revenue)} />
-            <Line l="Deductible expenses" v={money(expenses)} />
-            <Line l="Estimated taxable profit" v={money(profit)} strong />
+            <Line l="Revenue (net of VAT)" v={moneyAED(revenue)} />
+            <Line l="Deductible expenses" v={moneyAED(expenses)} />
+            <Line l="Estimated taxable profit" v={moneyAED(profit)} strong />
             <div style={{ height: 1, background: C.warmgray, margin: "10px 0" }} />
-            <Line l={"Tax-free threshold"} v={money(settings.ctThreshold)} muted />
+            <Line l={"Tax-free threshold"} v={moneyAED(settings.ctThreshold)} muted />
             <Line l={"Rate above threshold"} v={Math.round(settings.ctRate * 100) + "%"} muted />
-            <Line l="Estimated Corporate Tax" v={money(ct) + " " + settings.bank.currency} big />
+            <Line l="Estimated Corporate Tax" v={moneyAED(ct)} big />
           </div>
           <div className="card" style={{ background: C.offwhite }}>
             <div style={{ fontWeight: 700, color: C.brandBlueDark, marginBottom: 8 }}>How this is calculated</div>
             <p style={{ fontSize: 13, color: C.charcoal, lineHeight: 1.6 }}>
-              Taxable profit = revenue − deductible expenses. Corporate Tax applies at {Math.round(settings.ctRate * 100)}% on profit above AED {money(settings.ctThreshold)}; profit at or below the threshold is taxed at 0%.
+              Taxable profit = revenue − deductible expenses. Corporate Tax applies at {Math.round(settings.ctRate * 100)}% on profit above {moneyAED(settings.ctThreshold)}; profit at or below the threshold is taxed at 0%.
             </p>
-            {sbrEligible ? (
-              <div className="chip" style={{ marginTop: 10, background: "#17301F", borderColor: "#2C5A3C", color: OK }}>
-                Small Business Relief applied — revenue ≤ AED {money(settings.sbrRevenueCap)}, tax estimated at 0.
-              </div>
+            {settings.smallBusinessRelief ? (
+              sbrEligible ? (
+                <div className="chip" style={{ marginTop: 10, background: "#17301F", borderColor: "#2C5A3C", color: OK }}>
+                  Potential Small Business Relief — revenue is within the {moneyAED(settings.sbrRevenueCap)} threshold. Confirm eligibility.
+                </div>
+              ) : (
+                <div className="chip" style={{ marginTop: 10 }}>Revenue exceeds the {moneyAED(settings.sbrRevenueCap)} threshold — Small Business Relief would not apply.</div>
+              )
             ) : (
-              <div className="chip" style={{ marginTop: 10 }}>Small Business Relief not applied (toggle in Settings).</div>
+              <div className="chip" style={{ marginTop: 10 }}>Small Business Relief not enabled (toggle in Settings).</div>
             )}
-            <p style={{ fontSize: 12, color: C.mid, marginTop: 12 }}>Corporate Tax registration deadline for the company is around September 2026 — keep it on the compliance calendar.</p>
           </div>
         </div>
       </div>
@@ -1974,46 +2394,87 @@ function Line({ l, v, strong, big, muted }) {
 /* ----------------------------------------------------------- settings */
 function TrashBin({ trash, trashLabel, trashName, trashDetail, restoreFromTrash, purgeFromTrash, purgeAllTrash }) {
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [confirmPurge, setConfirmPurge] = useState(null); // single item pending permanent delete
   const sorted = trash.slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
   return (
     <>
-      <div className="head"><h1>Bin</h1><p>{trash.length} item{trash.length === 1 ? "" : "s"} · restore anything deleted by mistake</p></div>
+      <div className="head"><h1>Bin</h1><p>{trash.length} item{trash.length === 1 ? "" : "s"} in Bin · restore anything deleted by mistake</p></div>
       <div className="body">
-        <div className="sectitle"><span className="pill">{trash.length} in bin</span>
+        <div className="sectitle" style={{ justifyContent: "flex-end" }}>
           {trash.length > 0 && <button className="btn p" onClick={() => setConfirmEmpty(true)}>Empty bin</button>}
         </div>
         {confirmEmpty && (
           <ConfirmDialog
             title="Empty bin"
-            message="Permanently delete everything in the bin? This cannot be undone."
+            message={"Permanently delete all " + trash.length + " item" + (trash.length === 1 ? "" : "s") + " in the Bin? This cannot be undone."}
             confirmLabel="Empty bin"
             danger
             onCancel={() => setConfirmEmpty(false)}
             onConfirm={() => { purgeAllTrash(); setConfirmEmpty(false); }}
           />
         )}
-        {sorted.length ? (
-          <div className="tablewrap">
-            <table className="tbl">
-              <thead><tr><th>Item</th><th>Type</th><th>Related</th><th>Deleted</th><th></th></tr></thead>
-              <tbody>
-                {sorted.map((t) => (
-                  <tr key={t.id}>
-                    <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{trashName(t)}</td>
-                    <td>{trashLabel[t.type] || t.type}</td>
-                    <td style={{ fontSize: 12.5, color: C.mid }}>{trashDetail(t)}</td>
-                    <td style={{ fontSize: 12.5 }}>{fmtDateTime(t.deletedAt)}</td>
-                    <td><div className="rowact">
-                      <button className="iconbtn" title="Restore" onClick={() => restoreFromTrash(t.id)}><RotateCcw size={14} /></button>
-                      <button className="iconbtn del" title="Delete forever" onClick={() => { if (confirm(t.type === "client" ? "Permanently delete this client and everything bundled with it? This cannot be undone." : "Permanently delete this item? This cannot be undone.")) purgeFromTrash(t.id); }}><Trash2 size={14} /></button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <div className="card empty"><div className="disp">Bin is empty</div><p>Anything you delete from Clients, Deals, Referrals, or Invoices shows up here so you can restore it. Deleting a client also bins its deals, referrals, and invoices together, and restores them all at once.</p></div>}
+
+        <div className="hide-mobile">
+          {sorted.length ? (
+            <div className="tablewrap">
+              <table className="tbl">
+                <thead><tr><th>Item</th><th>Type</th><th>Related</th><th>Deleted</th><th></th></tr></thead>
+                <tbody>
+                  {sorted.map((t) => (
+                    <tr key={t.id}>
+                      <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{trashName(t)}</td>
+                      <td>{trashLabel[t.type] || t.type}</td>
+                      <td style={{ fontSize: 12.5, color: C.mid }}>{trashDetail(t)}</td>
+                      <td style={{ fontSize: 12.5 }}>{fmtDateTime(t.deletedAt)}</td>
+                      <td><div className="rowact">
+                        <button className="iconbtn" title="Restore" onClick={() => restoreFromTrash(t.id)}><RotateCcw size={14} /></button>
+                        <button className="iconbtn del" title="Delete permanently" onClick={() => setConfirmPurge(t)}><Trash2 size={14} /></button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="card empty"><div className="disp">Bin is empty</div><p>Anything you delete from Clients, Deals, Referrals, or Invoices shows up here so you can restore it. Deleting a client also bins its deals, referrals, and invoices together, and restores them all at once.</p></div>}
+        </div>
+
+        <div className="hide-desktop">
+          {sorted.length ? sorted.map((t) => (
+            <MobileCard
+              key={t.id}
+              top={trashName(t)}
+              sub={trashLabel[t.type] || t.type}
+              rows={[
+                ...(trashDetail(t) ? [{ k: "Related", v: trashDetail(t) }] : []),
+                { k: "Deleted", v: fmtDateTime(t.deletedAt) || "—" },
+              ]}
+              menu={
+                <ActionMenu
+                  ariaLabel="Bin item actions"
+                  actions={[
+                    { label: "Restore", icon: RotateCcw, onSelect: () => restoreFromTrash(t.id) },
+                    { label: "Delete permanently", icon: Trash2, danger: true, onSelect: () => setConfirmPurge(t) },
+                  ]}
+                />
+              }
+            />
+          )) : <div className="card empty"><div className="disp">Bin is empty</div><p>Anything you delete from Clients, Deals, Referrals, or Invoices shows up here so you can restore it. Deleting a client also bins its deals, referrals, and invoices together, and restores them all at once.</p></div>}
+        </div>
       </div>
+
+      {confirmPurge && (
+        <ConfirmDialog
+          title="Delete permanently"
+          message={(confirmPurge.type === "client"
+            ? "Permanently delete \"" + trashName(confirmPurge) + "\" and everything bundled with it (its deals, referrals, and invoices)?"
+            : "Permanently delete \"" + trashName(confirmPurge) + "\"?"
+          ) + " This cannot be undone."}
+          confirmLabel="Delete permanently"
+          danger
+          onCancel={() => setConfirmPurge(null)}
+          onConfirm={() => { purgeFromTrash(confirmPurge.id); setConfirmPurge(null); }}
+        />
+      )}
     </>
   );
 }
@@ -2191,7 +2652,7 @@ function SettingsView(props) {
         <div className="card">
           <div className="frow"><Field label="Legal name"><input value={s.company.name} onChange={(e) => setCo({ name: e.target.value })} /></Field>
             <Field label="Trade licence"><input value={s.company.licence} onChange={(e) => setCo({ licence: e.target.value })} /></Field></div>
-          <Field label="Address"><input value={s.company.address} onChange={(e) => setCo({ address: e.target.value })} /></Field>
+          <Field label="Address"><textarea rows={2} value={s.company.address} onChange={(e) => setCo({ address: e.target.value })} /></Field>
           <div className="frow"><Field label="Website"><input value={s.company.website} onChange={(e) => setCo({ website: e.target.value })} /></Field>
             <Field label="Phone"><input value={s.company.phone} onChange={(e) => setCo({ phone: e.target.value })} /></Field>
             <Field label="Email"><input value={s.company.email} onChange={(e) => setCo({ email: e.target.value })} /></Field></div>
@@ -2217,32 +2678,30 @@ function SettingsView(props) {
           </div>
           <div className="frow">
             <Field label="Corporate Tax rate (%)"><input type="number" value={Math.round(s.ctRate * 100)} onChange={(e) => setS({ ...s, ctRate: num(e.target.value) / 100 })} /></Field>
-            <Field label="CT tax-free threshold (AED)"><input type="number" value={s.ctThreshold} onChange={(e) => setS({ ...s, ctThreshold: num(e.target.value) })} /></Field>
+            <Field label="CT tax-free threshold (AED)"><MoneyInput value={s.ctThreshold} onChange={(v) => setS({ ...s, ctThreshold: num(v) })} /></Field>
             <Field label="Invoice theme"><select value={s.invoiceTheme} onChange={(e) => setS({ ...s, invoiceTheme: e.target.value })}><option value="light">Light</option><option value="dark">Dark</option></select></Field>
           </div>
           <Field label="Small Business Relief"><label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, marginTop: 6 }}>
             <input type="checkbox" style={{ width: "auto", marginTop: 3, flexShrink: 0 }} checked={s.smallBusinessRelief} onChange={(e) => setS({ ...s, smallBusinessRelief: e.target.checked })} />
-            Elect relief while revenue ≤ AED {money(s.sbrRevenueCap)} (estimates CT at 0)</label></Field>
+            Enable potential relief while revenue is within AED {money(s.sbrRevenueCap)} (subject to eligibility; estimates CT at 0)</label></Field>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 18, alignItems: "center" }}>
+        <div className="card" style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center" }}>
           <button className="btn p" onClick={apply}><Check size={15} />Save settings</button>
           {saved && <span style={{ color: OK, fontSize: 13, fontWeight: 600 }}>Saved.</span>}
         </div>
 
-        <div className="sectitle" style={{ marginTop: 30 }}><h2>Export for accounting software</h2></div>
+        <div className="sectitle" style={{ marginTop: 22 }}><h2>Export for accounting software</h2></div>
         <div className="card">
-          <p style={{ fontSize: 13, color: C.charcoal, marginBottom: 12, lineHeight: 1.5 }}>
-            Clean CSVs that map straight into Zoho Books or Wafeq. Import customers first, then invoices, then expenses — the column headers match each tool’s import mapper.
+          <p style={{ fontSize: 12.5, color: C.charcoal, marginBottom: 10, lineHeight: 1.45 }}>
+            Clean CSVs for Zoho Books or Wafeq. Import customers, then invoices, then expenses.
           </p>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn s" onClick={exportCustomers}><Download size={15} />Customers (CSV)</button>
-            <button className="btn s" onClick={exportInvoices}><Download size={15} />Invoices (CSV)</button>
-            <button className="btn s" onClick={exportExpenses}><Download size={15} />Expenses (CSV)</button>
+            <button className="btn s" onClick={exportCustomers}><Download size={15} />Customers</button>
+            <button className="btn s" onClick={exportInvoices}><Download size={15} />Invoices</button>
+            <button className="btn s" onClick={exportExpenses}><Download size={15} />Expenses</button>
           </div>
-          <p style={{ fontSize: 12, color: C.mid, marginTop: 10 }}>
-            Invoices export as one row per line item with Tax %, so subtotals, VAT and totals rebuild correctly on import.
-          </p>
+          <p style={{ fontSize: 11.5, color: C.mid, marginTop: 8 }}>Invoices export one row per line item, with Tax %, so totals rebuild correctly on import.</p>
         </div>
 
         <div className="sectitle" style={{ marginTop: 22 }}><h2>Backup</h2></div>
@@ -2259,11 +2718,19 @@ function SettingsView(props) {
   );
 }
 
+// Human-readable label for a backup file — the primary thing shown to the
+// user is always this, never the raw timestamp-heavy storage filename.
+function backupLabel(f) {
+  return f.created_at
+    ? new Date(f.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : f.name;
+}
 function AutoBackupsList(props) {
   const [files, setFiles] = useState(null); // null = loading, [] = none found, [...] = list
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
   const [triggering, setTriggering] = useState(false);
+  const [showPrevious, setShowPrevious] = useState(false);
 
   const refresh = async () => {
     try {
@@ -2311,43 +2778,54 @@ function AutoBackupsList(props) {
     }
   };
 
+  const latest = files && files.length > 0 ? files[0] : null;
+  const previous = files && files.length > 1 ? files.slice(1) : [];
+
   return (
     <>
       <div className="sectitle" style={{ marginTop: 22 }}>
         <h2>Automatic backups</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span className="pill">Weekly snapshots, kept for ~3 months</span>
-          <button className="btn s" disabled={triggering} onClick={backupNow}>
-            {triggering ? "Backing up…" : "Backup now"}
-          </button>
-        </div>
+        <button className="btn s" disabled={triggering} onClick={backupNow}>
+          {triggering ? "Backing up…" : "Backup now"}
+        </button>
       </div>
       <div className="card">
         {files === null && <p style={{ fontSize: 13, color: C.mid }}>Checking for backups…</p>}
         {files !== null && files.length === 0 && (
           <p style={{ fontSize: 13, color: C.mid }}>{err || "No automatic backups yet."}</p>
         )}
-        {files && files.length > 0 && (
+        {latest && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: C.charcoal, display: "flex", alignItems: "center", gap: 8 }}>
+                {backupLabel(latest)}
+                <span className="chip" style={{ background: C.brandBlueTint, color: C.brandBlueDark, fontWeight: 700 }}>Most recent</span>
+              </div>
+            </div>
+            <button className="btn s" disabled={busy === latest.name} onClick={() => download(latest.name)}>
+              <Download size={14} />{busy === latest.name ? "…" : "Download"}
+            </button>
+          </div>
+        )}
+        {previous.length > 0 && (
+          <button className="linkbtn" style={{ marginTop: 12 }} onClick={() => setShowPrevious(true)}>View previous backups ({previous.length})</button>
+        )}
+      </div>
+
+      {showPrevious && (
+        <Modal title="Previous backups" onClose={() => setShowPrevious(false)} sheet>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {files.map((f, idx) => (
+            {previous.map((f) => (
               <div key={f.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + C.warmgray }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.charcoal, display: "flex", alignItems: "center", gap: 8 }}>
-                    {f.name}
-                    {idx === 0 && <span className="chip" style={{ background: C.brandBlueTint, color: C.brandBlueDark, fontWeight: 700 }}>Most recent</span>}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: C.mid }}>
-                    {f.created_at ? new Date(f.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
-                  </div>
-                </div>
+                <div style={{ fontSize: 13, color: C.charcoal }}>{backupLabel(f)}</div>
                 <button className="btn s" disabled={busy === f.name} onClick={() => download(f.name)}>
                   <Download size={14} />{busy === f.name ? "…" : "Download"}
                 </button>
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </Modal>
+      )}
     </>
   );
 }
