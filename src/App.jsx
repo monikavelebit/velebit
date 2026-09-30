@@ -859,6 +859,18 @@ export function Tappable({ onTap, className, children, as: As = "div", ...rest }
 // (via useTap, so it can't be nudged open by a scroll gesture crossing the
 // button), closes on outside tap via the same bare Overlay/backdrop
 // mechanism used elsewhere, and closes itself after any action fires.
+//
+// The outside-tap backdrop dismisses on pointerdown, not onClick. This
+// matters specifically on real touchscreens: opening the menu happens on
+// pointerup of the tap that hits the trigger button; the browser then
+// synthesizes a trailing compatibility mousedown/mouseup/click sequence
+// for that same touch, targeting whatever now sits at that screen point —
+// which, by the time those fire, is this backdrop (it just mounted). An
+// onClick handler here would catch that synthetic click and close the
+// menu in the same gesture that opened it, which reads as "the menu never
+// opens." Browsers don't re-synthesize a new pointerdown for that trailing
+// sequence (only the mouse-event family), so binding to pointerdown is
+// immune to it — it only ever fires on a genuinely new touch/click.
 export function ActionMenu({ actions, ariaLabel = "More actions" }) {
   const [open, setOpen] = useState(false);
   const toggle = useTap(() => setOpen((o) => !o));
@@ -869,7 +881,7 @@ export function ActionMenu({ actions, ariaLabel = "More actions" }) {
       </button>
       {open && (
         <>
-          <div className="backdrop bare" style={{ display: "block" }} onClick={() => setOpen(false)} />
+          <div className="backdrop bare" style={{ display: "block" }} onPointerDown={() => setOpen(false)} />
           <div className="actionmenu-list">
             {actions.map((a, i) => (
               <button
