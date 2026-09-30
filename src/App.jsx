@@ -663,8 +663,16 @@ table.tbl{width:100%;border-collapse:collapse}
 .mcard{background:${C.surface};border:1px solid ${C.warmgray};border-radius:16px;padding:14px 16px;box-shadow:0 1px 2px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:8px}
 .mcard + .mcard{margin-top:10px}
 .mcard-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.mcard-title{font-weight:600;color:${C.brandBlueDark};font-size:14.5px;line-height:1.3}
-.mcard-sub{font-size:12px;color:${C.mid};margin-top:2px}
+/* Flex items default to min-width:auto, which lets long unbroken text
+   (a long deal title, a long company name) refuse to wrap and instead
+   force the row wider or run under the status chip. flex:1/min-width:0
+   makes this block actually shrink to the row and let its text wrap,
+   which is what keeps the title block left-aligned and the chip clear
+   of it regardless of title length. */
+.mcard-head{flex:1;min-width:0;text-align:left}
+.mcard-title{font-weight:600;color:${C.brandBlueDark};font-size:14.5px;line-height:1.3;text-align:left;word-break:break-word}
+.mcard-sub{font-size:12px;color:${C.mid};margin-top:2px;text-align:left;word-break:break-word}
+.mcard-menu{flex-shrink:0}
 .mcard-rows{display:flex;flex-direction:column;gap:6px}
 .mcard-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px}
 .mcard-row .k{color:${C.mid}}
@@ -1014,11 +1022,11 @@ export function MobileCard({ top, sub, rows, notes, onTap, menu }) {
   return (
     <div className="mcard" {...(onTap ? tap : {})}>
       <div className="mcard-top">
-        <div>
+        <div className="mcard-head">
           <div className="mcard-title">{top}</div>
           {sub && <div className="mcard-sub">{sub}</div>}
         </div>
-        {menu}
+        {menu && <div className="mcard-menu">{menu}</div>}
       </div>
       {rows && rows.length > 0 && (
         <div className="mcard-rows">
