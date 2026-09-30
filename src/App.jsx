@@ -637,6 +637,26 @@ export default function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [menuOpen, setMenuOpen] = useState(false);
   const loaded = useRef(false);
+  // Keys whose NEXT state-change-triggered save effect should be skipped,
+  // because that specific change is state catching up to a value already
+  // written to Supabase directly (currently only by a successful restore —
+  // see importAll in SettingsView, which calls markRestored() right before
+  // calling each setter). Each entry is consumed (deleted) the first time
+  // its effect below sees it, whether or not that effect actually runs —
+  // see restoreSaveSuppressed's own cleanup for the "effect never runs"
+  // edge case. This must never be used to skip a save for any other reason;
+  // normal edits always go through save() as before.
+  const restoreSaveSuppressed = useRef(new Set());
+  const markRestored = (key) => restoreSaveSuppressed.current.add(key);
+  const consumeRestoreSuppression = (key) => {
+    if (restoreSaveSuppressed.current.has(key)) { restoreSaveSuppressed.current.delete(key); return true; }
+    return false;
+  };
+  // Escape hatch for the restore code: if it marks a key but then can't
+  // guarantee the corresponding state update actually happened, it must be
+  // able to un-mark that key rather than leave a suppression flag sitting
+  // there to silently eat a later, genuine save.
+  const clearRestoreSuppression = (key) => restoreSaveSuppressed.current.delete(key);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -706,16 +726,40 @@ export default function App() {
     loadAll();
   }, [session?.user?.id]);
   useEffect(() => {
-    if (loaded.current) {
-      save("velebit:clients", clients);
-    }
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:clients")) return;
+    save("velebit:clients", clients);
   }, [clients]);
-  useEffect(() => { if (loaded.current) save("velebit:deals", deals); }, [deals]);
-  useEffect(() => { if (loaded.current) save("velebit:referrals", referrals); }, [referrals]);
-  useEffect(() => { if (loaded.current) save("velebit:invoices", invoices); }, [invoices]);
-  useEffect(() => { if (loaded.current) save("velebit:txns", txns); }, [txns]);
-  useEffect(() => { if (loaded.current) save("velebit:trash", trash); }, [trash]);
-  useEffect(() => { if (loaded.current) save("velebit:settings", settings); }, [settings]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:deals")) return;
+    save("velebit:deals", deals);
+  }, [deals]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:referrals")) return;
+    save("velebit:referrals", referrals);
+  }, [referrals]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:invoices")) return;
+    save("velebit:invoices", invoices);
+  }, [invoices]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:txns")) return;
+    save("velebit:txns", txns);
+  }, [txns]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:trash")) return;
+    save("velebit:trash", trash);
+  }, [trash]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (consumeRestoreSuppression("velebit:settings")) return;
+    save("velebit:settings", settings);
+  }, [settings]);
 
   // Switching sections keeps the window's scroll position, so picking a new
   // section while scrolled down drops you into the middle of it. Every section
@@ -868,7 +912,7 @@ export default function App() {
           {view === "accounting" && <Accounting {...{ txns, setTxns, invoices, settings, trashIt }} />}
           {view === "tax" && <Tax {...{ invoices, txns, settings }} />}
           {view === "trash" && <TrashBin {...{ trash, trashLabel, trashName, trashDetail, restoreFromTrash, purgeFromTrash, purgeAllTrash }} />}
-          {view === "settings" && <SettingsView {...{ settings, setSettings, clients, deals, referrals, invoices, txns, trash, setClients, setDeals, setReferrals, setInvoices, setTxns, setTrash }} />}
+          {view === "settings" && <SettingsView {...{ settings, setSettings, clients, deals, referrals, invoices, txns, trash, setClients, setDeals, setReferrals, setInvoices, setTxns, setTrash, markRestored, clearRestoreSuppression }} />}
         </main>
       </div>
     </>
@@ -1781,11 +1825,40 @@ function SettingsView(props) {
           }
 
           // Every key wrote successfully — now, and only now, reflect the
-          // restore on screen.
-          for (const [, newVal, , setter] of written) setter(newVal);
+          // restore on screen. Each of these state updates is about to
+          // re-trigger its own App-level save effect for the exact value
+          // that trySave() above already wrote — mark it so that ONE
+          // upcoming save is skipped, rather than redundantly re-writing
+          // (and re-bumping updated_at for) data already safely persisted.
+          // markRestored is a no-op if this SettingsView instance somehow
+          // wasn't given it, so restore itself is never blocked by this.
+          //
+          // If a setter call itself were ever to throw partway through this
+          // loop (React setState doesn't in practice, but this must never
+          // be the thing that silently swallows a future real save), the
+          // catch below clears every flag this loop marked before
+          // re-throwing — better to risk one redundant save afterward than
+          // to leave a suppression flag that could eat a genuine edit.
+          const markedThisRun = [];
+          try {
+            for (const [key, newVal, , setter] of written) {
+              if (props.markRestored) { props.markRestored(key); markedThisRun.push(key); }
+              setter(newVal);
+            }
+          } catch (syncErr) {
+            if (props.clearRestoreSuppression) markedThisRun.forEach(props.clearRestoreSuppression);
+            throw syncErr;
+          }
           if (newSettings) setS(newSettings);
           alert("Backup restored.");
-        })();
+        })().catch((err) => {
+          // Belt-and-braces: nothing inside the block above is expected to
+          // throw after the write/rollback stage, but if it somehow does,
+          // report it rather than letting it disappear as an unhandled
+          // promise rejection.
+          console.error("Unexpected error after restore writes completed", err);
+          alert("Restore wrote successfully but hit an unexpected error while updating the screen: " + (err?.message || err) + "\n\nYour data was written; if the screen looks wrong, reload the page.");
+        });
       } catch (err) { alert("Restore failed unexpectedly: " + (err?.message || err)); }
     };
     r.readAsText(f);
