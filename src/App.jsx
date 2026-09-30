@@ -464,6 +464,18 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offw
 .nav .ic{display:flex;color:${C.mid}}
 .signoutbtn{width:calc(100% - 16px);margin:8px;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid rgba(255,255,255,.15);color:${C.charcoal};padding:10px 13px;border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit}
 .signoutbtn:hover{background:rgba(255,255,255,.06);color:#fff}
+/* Shared z-index scale (Phase 3.1 fix) — app chrome sits at the bottom,
+   the 3-dot popover sits above chrome, and the shared Overlay (every
+   modal/sheet/detail/confirm dialog) sits above everything, always. Any
+   app-controlled overlay must fully cover — and intercept taps ahead of —
+   the hamburger/sidebar, never the other way round.
+     chrome (hamburger, sidebar drawer + its own backdrop): 40–60
+     3-dot popover + its outside-tap catcher, incl. standalone list-row use: 90
+     shared Overlay (Modal/ConfirmDialog/ClientPicker/sheets): 100
+   Overlay is a real full-viewport element, so once its z-index exceeds the
+   hamburger's, the browser's normal hit-testing already makes the
+   hamburger both visually covered AND untappable underneath it — no extra
+   JS is needed for either half of that requirement. */
 /* Was C.deep, which is now the page background — the button would vanish.
    Brand blue keeps it visible against the dark page. */
 .hamburger{display:none;position:fixed;top:14px;left:14px;z-index:60;background:${C.brandBlueLt};color:#fff;border:none;border-radius:8px;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer}
@@ -473,8 +485,11 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offw
 /* A lighter variant for small anchored popovers (the 3-dot action menu)
    where a full page-dim would be visually heavy-handed — this is still the
    same .backdrop element/mechanism (an invisible full-screen tap-catcher
-   that closes the popover on outside tap), just undimmed and unblurred. */
-.backdrop.bare{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+   that closes the popover on outside tap), just undimmed and unblurred.
+   z-index 90: above the hamburger/sidebar chrome even when the 3-dot menu
+   is used directly on a mobile list card (Bin/Deal/etc.), not just inside
+   a modal. */
+.backdrop.bare{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;z-index:90}
 .main.blurred{filter:blur(4px);pointer-events:none;user-select:none}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .head{padding:20px 34px 8px}
@@ -518,7 +533,7 @@ table.tbl{width:100%;border-collapse:collapse}
 /* Single shared scrim: every app-controlled modal, sheet, detail dialog,
    confirm dialog and picker mounts through the Overlay component, which
    applies this one class rather than each one rolling its own backdrop. */
-.overlay{position:fixed;inset:0;background:rgba(8,9,11,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
+.overlay{position:fixed;inset:0;background:rgba(8,9,11,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:100;overflow:auto}
 .overlay.center{align-items:center}
 .modal{background:#1C1F24;border:1px solid ${C.warmgray};border-radius:16px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .modal.wide{max-width:900px}
@@ -528,6 +543,7 @@ table.tbl{width:100%;border-collapse:collapse}
 .modal.sheet{max-width:420px}
 .mhead{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid ${C.warmgray}}
 .mhead h3{font-size:16.5px;color:${C.brandBlueDark};font-weight:700}
+.mhead-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .mbody{padding:16px 18px;max-height:70vh;overflow:auto}
 .mfoot{padding:12px 18px;border-top:1px solid ${C.warmgray};display:flex;justify-content:flex-end;gap:10px}
 .confirmtext{font-size:13.5px;color:${C.charcoal};line-height:1.55}
@@ -562,7 +578,7 @@ table.tbl{width:100%;border-collapse:collapse}
 
 /* ---- 3-dot action menu (ActionMenu component) ---- */
 .actionmenu{position:relative;display:inline-flex}
-.actionmenu-list{position:absolute;right:0;top:calc(100% + 6px);min-width:170px;background:#1C1F24;border:1px solid ${C.warmgray};border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:55;display:flex;flex-direction:column;gap:1px}
+.actionmenu-list{position:absolute;right:0;top:calc(100% + 6px);min-width:170px;background:#1C1F24;border:1px solid ${C.warmgray};border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:90;display:flex;flex-direction:column;gap:1px}
 .actionmenu-item{display:flex;align-items:center;gap:9px;background:transparent;border:none;color:${C.charcoal};font-size:13px;font-family:inherit;text-align:left;padding:10px 11px;border-radius:8px;cursor:pointer;width:100%}
 .actionmenu-item:hover{background:rgba(255,255,255,.06)}
 .actionmenu-item.danger{color:${BAD}}
@@ -581,9 +597,19 @@ table.tbl{width:100%;border-collapse:collapse}
 .mcard-notes{font-size:12.5px;color:${C.charcoal};line-height:1.5;white-space:pre-wrap;word-break:break-word}
 /* Full contact/detail text must never truncate — deliberately no
    text-overflow/ellipsis/nowrap anywhere in this block. */
-.detailcard{display:flex;flex-direction:column;gap:16px}
-.detailcard-section{display:flex;flex-direction:column;gap:6px}
+.detailcard{display:flex;flex-direction:column;gap:14px}
+.detailcard-section{display:flex;flex-direction:column;gap:5px}
 .detailcard-section h4{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:${C.mid};font-weight:600;margin:0}
+/* Compact label/value row for a group of short fields (a contact card's
+   name/company/email/phone block, a deal's client/service/value, etc.) —
+   denser than stacking each field as its own .detailcard-section, while
+   still never truncating: long values wrap onto a second line instead of
+   being cut off or squeezed. */
+.detailrows{display:flex;flex-direction:column;border:1px solid ${C.warmgray};border-radius:12px;overflow:hidden}
+.detailrow{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:8px 12px;border-bottom:1px solid #2A2D33;font-size:13px}
+.detailrows .detailrow:last-child{border-bottom:none}
+.detailrow .k{color:${C.mid};flex-shrink:0;font-size:11.5px}
+.detailrow .v{color:${C.charcoal};text-align:right;word-break:break-word;font-weight:500}
 
 /* ---- Responsive table/card toggle: every screen renders BOTH a desktop
    .tablewrap and a mobile .mobile-cards block; these two rules pick exactly
@@ -671,12 +697,20 @@ export function Overlay({ children, onClose, center, bare }) {
   );
 }
 
-export function Modal({ title, children, onClose, footer, wide, sheet, center }) {
+// `headerActions` is for a compact control that belongs beside Close — the
+// 3-dot ActionMenu on a detail view, so it's reachable without scrolling
+// through a long card. It renders between the title and the X button:
+// [Title]  [headerActions]  [X]
+export function Modal({ title, children, onClose, footer, wide, sheet, center, headerActions }) {
   return (
     <Overlay onClose={onClose} center={center ?? sheet}>
       <div className={"modal" + (wide ? " wide" : "") + (sheet ? " sheet" : "")}>
         <div className="mhead"><h3>{title}</h3>
-          <button className="iconbtn" onClick={onClose} aria-label="Close"><X size={18} /></button></div>
+          <div className="mhead-actions">
+            {headerActions}
+            <button className="iconbtn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          </div>
+        </div>
         <div className="mbody">{children}</div>
         {footer && <div className="mfoot">{footer}</div>}
       </div>
@@ -752,7 +786,7 @@ export function ActionMenu({ actions, ariaLabel = "More actions" }) {
       </button>
       {open && (
         <>
-          <div className="backdrop bare" style={{ display: "block", zIndex: 54 }} onClick={() => setOpen(false)} />
+          <div className="backdrop bare" style={{ display: "block" }} onClick={() => setOpen(false)} />
           <div className="actionmenu-list">
             {actions.map((a, i) => (
               <button
@@ -894,6 +928,18 @@ export function DetailSection({ label, children }) {
     <div className="detailcard-section">
       <h4>{label}</h4>
       <div style={{ fontSize: 13.5, color: C.charcoal, lineHeight: 1.5 }}>{children}</div>
+    </div>
+  );
+}
+// One compact label/value line, meant to be grouped with others inside a
+// .detailrows block — the denser alternative to DetailSection for a run of
+// short fields. Same never-truncate guarantee: long values wrap, they are
+// never ellipsized or cut off.
+export function DetailRow({ label, value }) {
+  return (
+    <div className="detailrow">
+      <span className="k">{label}</span>
+      <span className="v">{value}</span>
     </div>
   );
 }
@@ -1289,7 +1335,16 @@ function Dashboard({ clients, deals, referrals, invoices, txns, settings, setVie
           <KPI lab={"Revenue " + year} v={money(revYTD)} sub="Invoiced incl. VAT" />
           <KPI lab="Outstanding" v={money(outstanding)} sub="Balance owing across invoices" />
           <KPI lab="VAT collected" v={money(vatYTD)} sub={"Output VAT " + year} />
-          <KPI lab="Referral fees pending" v={money(feePending)} sub={money(feeReceived) + " received to date"} />
+        </div>
+        {/* Deliberately not a fifth grid cell — this reads as a secondary
+            summary strip under the primary 2x2 KPI grid, not an orphaned
+            card filling half a row. */}
+        <div className="card" style={{ marginTop: 10, padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: .6, textTransform: "uppercase", color: C.mid, fontWeight: 600 }}>Referral fees pending</div>
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 2 }}>{money(feeReceived)} received to date</div>
+          </div>
+          <div style={{ fontSize: 19, fontWeight: 700, color: C.brandBlueDark }}>{money(feePending)}</div>
         </div>
 
         {!hasData ? (
@@ -1472,7 +1527,7 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
         <Modal
           title="Client"
           onClose={() => setViewing(null)}
-          footer={
+          headerActions={
             <ActionMenu
               ariaLabel="Client actions"
               actions={[
@@ -1483,15 +1538,19 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
           }
         >
           <div className="detailcard">
-            <DetailSection label="Name">{viewing.name || "—"}</DetailSection>
-            <DetailSection label="Company">{viewing.company || "—"}</DetailSection>
-            <DetailSection label="Email">{viewing.email || "—"}</DetailSection>
-            <DetailSection label="Phone">{viewing.phone || "—"}</DetailSection>
-            <DetailSection label="Additional phone">{viewing.phone2 || "—"}</DetailSection>
-            <DetailSection label="Country / jurisdiction">{viewing.country || "—"}</DetailSection>
+            <div className="detailrows">
+              <DetailRow label="Name" value={viewing.name || "—"} />
+              <DetailRow label="Company" value={viewing.company || "—"} />
+              <DetailRow label="Email" value={viewing.email || "—"} />
+              <DetailRow label="Phone" value={viewing.phone || "—"} />
+              <DetailRow label="Additional phone" value={viewing.phone2 || "—"} />
+              <DetailRow label="Country / jurisdiction" value={viewing.country || "—"} />
+            </div>
             <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
-            <DetailSection label="Deal summary">{dealCount(viewing.id)} deal{dealCount(viewing.id) === 1 ? "" : "s"}</DetailSection>
-            <DetailSection label="Invoice summary">{invCount(viewing.id)} invoice{invCount(viewing.id) === 1 ? "" : "s"}</DetailSection>
+            <div className="detailrows">
+              <DetailRow label="Deal summary" value={dealCount(viewing.id) + " deal" + (dealCount(viewing.id) === 1 ? "" : "s")} />
+              <DetailRow label="Invoice summary" value={invCount(viewing.id) + " invoice" + (invCount(viewing.id) === 1 ? "" : "s")} />
+            </div>
           </div>
         </Modal>
       )}
@@ -1637,7 +1696,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
         <Modal
           title="Deal"
           onClose={() => setViewing(null)}
-          footer={
+          headerActions={
             <ActionMenu
               ariaLabel="Deal actions"
               actions={[
@@ -1648,12 +1707,14 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
           }
         >
           <div className="detailcard">
-            <DetailSection label="Title">{viewing.title || "—"}</DetailSection>
-            <DetailSection label="Client">{cname(viewing.clientId)}</DetailSection>
-            <DetailSection label="Service">{viewing.service || "—"}</DetailSection>
-            <DetailSection label="Value">{currency} {money(viewing.value)}</DetailSection>
-            <DetailSection label="Stage"><Tag label={viewing.stage} color={STAGE_COLOR[viewing.stage]} /></DetailSection>
-            <DetailSection label="Expected close">{fmtDate(viewing.closeDate) || "—"}</DetailSection>
+            <div className="detailrows">
+              <DetailRow label="Title" value={viewing.title || "—"} />
+              <DetailRow label="Client" value={cname(viewing.clientId)} />
+              <DetailRow label="Service" value={viewing.service || "—"} />
+              <DetailRow label="Value" value={currency + " " + money(viewing.value)} />
+              <DetailRow label="Stage" value={<Tag label={viewing.stage} color={STAGE_COLOR[viewing.stage]} />} />
+              <DetailRow label="Expected close" value={fmtDate(viewing.closeDate) || "—"} />
+            </div>
             <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
           </div>
         </Modal>
@@ -1781,7 +1842,7 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
         <Modal
           title="Referral"
           onClose={() => setViewing(null)}
-          footer={
+          headerActions={
             <ActionMenu
               ariaLabel="Referral actions"
               actions={[
@@ -1792,15 +1853,17 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
           }
         >
           <div className="detailcard">
-            <DetailSection label="Client">{cname(viewing.clientId)}</DetailSection>
-            <DetailSection label="Broker-dealer">{viewing.broker || "—"}</DetailSection>
-            <DetailSection label="Service or product">{viewing.service || "—"}</DetailSection>
-            <DetailSection label="Deal value">{money(viewing.dealValue)}</DetailSection>
-            <DetailSection label="Fee expected">{money(viewing.feeExpected)}</DetailSection>
-            <DetailSection label="Fee received">{money(viewing.feeReceived)}</DetailSection>
-            <DetailSection label="Status"><Tag label={viewing.status} color={REF_COLOR[viewing.status]} /></DetailSection>
-            <DetailSection label="Referral date">{fmtDate(viewing.referralDate) || "—"}</DetailSection>
-            <DetailSection label="Fee paid date">{fmtDate(viewing.paidDate) || "—"}</DetailSection>
+            <div className="detailrows">
+              <DetailRow label="Client" value={cname(viewing.clientId)} />
+              <DetailRow label="Broker-dealer" value={viewing.broker || "—"} />
+              <DetailRow label="Service or product" value={viewing.service || "—"} />
+              <DetailRow label="Deal value" value={money(viewing.dealValue)} />
+              <DetailRow label="Fee expected" value={money(viewing.feeExpected)} />
+              <DetailRow label="Fee received" value={money(viewing.feeReceived)} />
+              <DetailRow label="Status" value={<Tag label={viewing.status} color={REF_COLOR[viewing.status]} />} />
+              <DetailRow label="Referral date" value={fmtDate(viewing.referralDate) || "—"} />
+              <DetailRow label="Fee paid date" value={fmtDate(viewing.paidDate) || "—"} />
+            </div>
             <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
           </div>
         </Modal>
@@ -2207,7 +2270,7 @@ function Accounting({ txns, setTxns, invoices, settings, trashIt }) {
         <Modal
           title="Accounting entry"
           onClose={() => setViewing(null)}
-          footer={
+          headerActions={
             <ActionMenu
               ariaLabel="Entry actions"
               actions={[
@@ -2218,12 +2281,14 @@ function Accounting({ txns, setTxns, invoices, settings, trashIt }) {
           }
         >
           <div className="detailcard">
-            <DetailSection label="Type">{viewing.type === "income" ? "Income" : "Expense"}</DetailSection>
-            <DetailSection label="Category">{viewing.category || "—"}</DetailSection>
-            <DetailSection label="Description">{viewing.description || "—"}</DetailSection>
-            <DetailSection label="Date">{fmtDate(viewing.date) || "—"}</DetailSection>
-            <DetailSection label="Amount">{money(viewing.amount)}</DetailSection>
-            <DetailSection label="VAT paid">{money(viewing.vat)}</DetailSection>
+            <div className="detailrows">
+              <DetailRow label="Type" value={viewing.type === "income" ? "Income" : "Expense"} />
+              <DetailRow label="Category" value={viewing.category || "—"} />
+              <DetailRow label="Description" value={viewing.description || "—"} />
+              <DetailRow label="Date" value={fmtDate(viewing.date) || "—"} />
+              <DetailRow label="Amount" value={money(viewing.amount)} />
+              <DetailRow label="VAT paid" value={money(viewing.vat)} />
+            </div>
             <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
           </div>
         </Modal>
@@ -2686,9 +2751,9 @@ function SettingsView(props) {
             Enable potential relief while revenue is within AED {money(s.sbrRevenueCap)} (subject to eligibility; estimates CT at 0)</label></Field>
         </div>
 
-        <div className="card" style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center" }}>
-          <button className="btn p" onClick={apply}><Check size={15} />Save settings</button>
-          {saved && <span style={{ color: OK, fontSize: 13, fontWeight: 600 }}>Saved.</span>}
+        <div style={{ marginTop: 14 }}>
+          <button className="btn p" style={{ width: "100%", justifyContent: "center" }} onClick={apply}><Check size={15} />Save settings</button>
+          {saved && <div style={{ color: OK, fontSize: 12.5, fontWeight: 600, marginTop: 6, textAlign: "center" }}>Saved.</div>}
         </div>
 
         <div className="sectitle" style={{ marginTop: 22 }}><h2>Export for accounting software</h2></div>
@@ -2795,14 +2860,12 @@ function AutoBackupsList(props) {
           <p style={{ fontSize: 13, color: C.mid }}>{err || "No automatic backups yet."}</p>
         )}
         {latest && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: C.charcoal, display: "flex", alignItems: "center", gap: 8 }}>
-                {backupLabel(latest)}
-                <span className="chip" style={{ background: C.brandBlueTint, color: C.brandBlueDark, fontWeight: 700 }}>Most recent</span>
-              </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: C.charcoal }}>{backupLabel(latest)}</div>
+              <span style={{ display: "inline-block", marginTop: 4, fontSize: 10, fontWeight: 700, letterSpacing: .3, textTransform: "uppercase", color: C.brandBlueDark, background: C.brandBlueTint, borderRadius: 5, padding: "2px 6px" }}>Most recent</span>
             </div>
-            <button className="btn s" disabled={busy === latest.name} onClick={() => download(latest.name)}>
+            <button className="btn s" style={{ flexShrink: 0 }} disabled={busy === latest.name} onClick={() => download(latest.name)}>
               <Download size={14} />{busy === latest.name ? "…" : "Download"}
             </button>
           </div>
