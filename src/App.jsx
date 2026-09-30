@@ -636,6 +636,7 @@ table.tbl{width:100%;border-collapse:collapse}
 .pill{font-size:12px;color:${C.mid}}
 .note{background:#22252B;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:9px 13px;font-size:12px;display:flex;gap:9px;align-items:flex-start}
 .itemtbl input{border:1px solid ${C.warmgray};border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit;background:${C.surface};color:${C.charcoal}}
+.lineitem{border:1px solid ${C.warmgray};border-radius:10px;padding:10px 12px;background:${C.surface}}
 .linkbtn{background:none;border:none;color:${C.brandBlueMid};font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;padding:0}
 .previewframe{width:100%;height:78vh;border:1px solid ${C.warmgray};border-radius:12px;background:${C.surface}}
 .stat2{display:flex;gap:10px;flex-wrap:wrap}
@@ -1413,7 +1414,7 @@ export default function App() {
     if (t.type === "client") {
       paths.push(...(t.data.client?.attachments || []).map((a) => a.path));
       (t.data.deals || []).forEach((d) => paths.push(...(d.attachments || []).map((a) => a.path)));
-    } else if (t.type === "deal") {
+    } else if (t.type === "deal" || t.type === "invoice") {
       paths.push(...(t.data.attachments || []).map((a) => a.path));
     }
     return paths;
@@ -2299,24 +2300,81 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
   );
 }
 
+// App-UI-only balance-state formatting for an invoice's owing/overpaid amount.
+// Never used by buildInvoiceHTMLv3 — the printed/saved BALANCE DUE line keeps
+// its own existing (possibly negative) numeric rendering untouched.
+function invBalanceState(owing) {
+  if (owing > 0.004) return { label: "Balance owing", text: moneyAED(owing), color: BAD };
+  if (owing < -0.004) return { label: "Balance", text: "Overpaid: " + moneyAED(Math.abs(owing)), color: OK };
+  return { label: "Balance", text: "Paid in full", color: OK };
+}
+
 /* ----------------------------------------------------------- invoices */
 function Invoices({ invoices, setInvoices, clients, settings, setSettings, trashIt }) {
   const [edit, setEdit] = useState(null);
+  const [viewing, setViewing] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const frame = useRef(null);
+  const cname = (id) => clients.find((c) => c.id === id)?.name || "—";
 
-  const newInvoice = () => setEdit({
-    id: "", invoiceNo: String(settings.nextInvoiceNo), date: today(), clientId: "",
-    billTo: { name: "", email: "", phone: "" },
-    items: [{ id: uid(), desc: "", qty: "", price: "" }],
-    vatEnabled: settings.vatEnabled, vatRate: settings.vatRate,
-    balancePaid: "", status: "Draft", theme: settings.invoiceTheme, notes: "", _isNew: true,
-  });
-  const submit = () => {
-    if (edit.id) setInvoices(invoices.map((i) => i.id === edit.id ? { ...edit, _isNew: undefined } : i));
-    else {
-      setInvoices([...invoices, { ...edit, id: uid(), _isNew: undefined }]);
-      if (String(settings.nextInvoiceNo) === edit.invoiceNo) setSettings({ ...settings, nextInvoiceNo: settings.nextInvoiceNo + 1 });
+  const newInvoice = () => {
+    setEdit({
+      id: "", invoiceNo: String(settings.nextInvoiceNo), date: today(), clientId: "",
+      billTo: { name: "", email: "", phone: "" },
+      items: [{ id: uid(), desc: "", qty: "", price: "" }],
+      vatEnabled: settings.vatEnabled, vatRate: settings.vatRate,
+      balancePaid: "", status: "Draft", theme: settings.invoiceTheme, notes: "", attachments: [], _isNew: true,
+    });
+    setPendingFiles([]);
+    setRemovedAttachmentIds([]);
+    setSaveError("");
+  };
+  const openEdit = (i) => { setEdit(i); setPendingFiles([]); setRemovedAttachmentIds([]); setSaveError(""); };
+  const submit = async () => {
+    setSaving(true);
+    setSaveError("");
+    const isNew = !edit.id;
+    const invoiceId = edit.id || uid();
+    const uploaded = [];
+    const failedUploads = [];
+    for (const file of pendingFiles) {
+      try { uploaded.push(await uploadAttachmentFile("invoices", invoiceId, file)); }
+      catch { failedUploads.push(file.name); }
+    }
+    const keptExisting = (edit.attachments || []).filter((a) => !removedAttachmentIds.includes(a.id));
+    const finalRecord = { ...edit, id: invoiceId, attachments: [...keptExisting, ...uploaded], _isNew: undefined };
+    const nextInvoices = isNew ? [...invoices, finalRecord] : invoices.map((i) => i.id === finalRecord.id ? finalRecord : i);
+
+    const res = await trySave("velebit:invoices", nextInvoices);
+    if (!res.ok) {
+      if (uploaded.length) {
+        const cleanup = await removeAttachmentObjects(uploaded.map((a) => a.path));
+        if (!cleanup.ok) console.error("Orphan attachment cleanup failed after a failed invoice save", cleanup);
+      }
+      setSaving(false);
+      setSaveError(
+        "Couldn't save this invoice" + (res.error?.isStaleConflict ? " — another session saved newer changes first. Reload and try again." : "") +
+        (uploaded.length ? " (any newly uploaded files were cleaned up)." : ".") +
+        (failedUploads.length ? " Also failed to upload: " + failedUploads.join(", ") + "." : "")
+      );
+      return;
+    }
+    setInvoices(nextInvoices);
+    if (isNew && String(settings.nextInvoiceNo) === edit.invoiceNo) setSettings({ ...settings, nextInvoiceNo: settings.nextInvoiceNo + 1 });
+    const removedPaths = (edit.attachments || []).filter((a) => removedAttachmentIds.includes(a.id)).map((a) => a.path);
+    if (removedPaths.length) {
+      const cleanup = await removeAttachmentObjects(removedPaths);
+      if (!cleanup.ok) console.error("Removed-attachment cleanup failed", cleanup);
+    }
+    setSaving(false);
+    if (failedUploads.length) {
+      setSaveError("Saved, but failed to upload: " + failedUploads.join(", ") + ". The rest of the invoice was saved — try adding that file again.");
+      return;
     }
     setEdit(null);
   };
@@ -2327,6 +2385,12 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
     if (inv?.id && inv.status === "Draft") {
       setInvoices((prev) => prev.map((x) => x.id === inv.id ? { ...x, status: "Sent" } : x));
     }
+  };
+  const doDelete = (i) => {
+    trashIt("invoice", { ...i, _clientName: i.billTo?.name || cname(i.clientId) });
+    setInvoices(invoices.filter((x) => x.id !== i.id));
+    setConfirmDelete(null);
+    setViewing(null);
   };
   const download = (inv) => {
     // Same mechanism as the "Print / Save PDF" button inside Preview: prints
@@ -2389,58 +2453,137 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
 
   return (
     <>
-      <div className="head"><h1>Invoices</h1><p>{invoices.length} invoices · exact Velebit template with live formulas</p></div>
+      <div className="head"><h1>Invoices</h1><p>{invoices.length} invoice{invoices.length === 1 ? "" : "s"} · Next number: {settings.nextInvoiceNo}</p></div>
       <div className="body">
-        <div className="sectitle"><span className="pill">Next number: {settings.nextInvoiceNo}</span>
+        <div className="sectitle">
+          <span className="pill">Next number: {settings.nextInvoiceNo}</span>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn p addbtn" onClick={newInvoice}><Plus size={15} />New invoice</button>
-          </div></div>
-        {invoices.length ? (
-          <div className="tablewrap">
-            <table className="tbl">
-              <thead><tr><th>No.</th><th>Date</th><th>Bill to</th><th className="num">Total</th><th className="num">Owing</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {invoices.slice().sort((a, b) => (parseInt(b.invoiceNo, 10) || 0) - (parseInt(a.invoiceNo, 10) || 0)).map((i) => {
-                  const t = invTotals(i, settings);
-                  return (
-                    <tr key={i.id}>
-                      <td style={{ fontWeight: 700, color: C.brandBlueDark }}>#{i.invoiceNo}</td>
-                      <td style={{ fontSize: 12.5 }}>{fmtDate(i.date)}</td>
-                      <td>{i.billTo?.name || "—"}</td>
-                      <td className="num">{money(t.total)}</td>
-                      <td className="num" style={{ color: t.owing > 0 ? BAD : OK }}>{money(t.owing)}</td>
-                      <td><Tag label={i.status} color={INV_COLOR[i.status] || C.mid} /></td>
-                      <td><div className="rowact">
-                        <button className="iconbtn" title="Preview" onClick={() => setPreview(i)}><FileText size={14} /></button>
-                        <button className="iconbtn" title="Download" onClick={() => download(i)}><Download size={14} /></button>
-                        <button className="iconbtn" title="Send email" onClick={() => sendEmail(i)}><Mail size={14} /></button>
-                        <button className="iconbtn" title="Edit" onClick={() => setEdit(i)}><Pencil size={14} /></button>
-                        <button className="iconbtn del" title="Delete" onClick={() => { if (confirm("Delete invoice #" + i.invoiceNo + "?")) { trashIt("invoice", i); setInvoices(invoices.filter((x) => x.id !== i.id)); } }}><Trash2 size={14} /></button>
-                      </div></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           </div>
-        ) : <div className="card empty"><div className="disp">No invoices yet</div><p>Create your first branded invoice — totals calculate automatically.</p></div>}
+        </div>
+
+        <div className="hide-mobile">
+          {invoices.length ? (
+            <div className="tablewrap">
+              <table className="tbl">
+                <thead><tr><th>No.</th><th>Date</th><th>Bill to</th><th className="num">Total</th><th className="num">Owing</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  {invoices.slice().sort((a, b) => (parseInt(b.invoiceNo, 10) || 0) - (parseInt(a.invoiceNo, 10) || 0)).map((i) => {
+                    const t = invTotals(i, settings);
+                    return (
+                      <tr key={i.id}>
+                        <td style={{ fontWeight: 700, color: C.brandBlueDark }}>#{i.invoiceNo}</td>
+                        <td style={{ fontSize: 12.5 }}>{fmtDate(i.date)}</td>
+                        <td>{i.billTo?.name || "—"}</td>
+                        <td className="num">{money(t.total)}</td>
+                        <td className="num" style={{ color: t.owing > 0 ? BAD : OK }}>{money(t.owing)}</td>
+                        <td><Tag label={i.status} color={INV_COLOR[i.status] || C.mid} /></td>
+                        <td><div className="rowact">
+                          <button className="iconbtn" title="Preview" onClick={() => setPreview(i)}><FileText size={14} /></button>
+                          <button className="iconbtn" title="Download" onClick={() => download(i)}><Download size={14} /></button>
+                          <button className="iconbtn" title="Send email" onClick={() => sendEmail(i)}><Mail size={14} /></button>
+                          <button className="iconbtn" title="Edit" onClick={() => openEdit(i)}><Pencil size={14} /></button>
+                          <button className="iconbtn del" title="Delete" onClick={() => setConfirmDelete(i)}><Trash2 size={14} /></button>
+                        </div></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="card empty"><div className="disp">No invoices yet</div><p>Create your first branded invoice — totals calculate automatically.</p></div>}
+        </div>
+
+        <div className="hide-desktop">
+          {invoices.length ? invoices.slice().sort((a, b) => (parseInt(b.invoiceNo, 10) || 0) - (parseInt(a.invoiceNo, 10) || 0)).map((i) => {
+            const t = invTotals(i, settings);
+            const bal = invBalanceState(t.owing);
+            return (
+              <MobileCard
+                key={i.id}
+                onTap={() => setViewing(i)}
+                top={"#" + i.invoiceNo}
+                sub={i.billTo?.name || "—"}
+                rows={[
+                  { k: "Date", v: fmtDate(i.date) || "—" },
+                  { k: "Total", v: moneyAED(t.total) },
+                  { k: bal.label, v: <span style={{ color: bal.color, fontWeight: 700 }}>{bal.text}</span> },
+                ]}
+                menu={<Tag label={i.status} color={INV_COLOR[i.status] || C.mid} />}
+              />
+            );
+          }) : <div className="card empty"><div className="disp">No invoices yet</div><p>Create your first branded invoice — totals calculate automatically.</p></div>}
+        </div>
       </div>
 
-      {edit && <InvoiceEditor {...{ edit, setEdit, clients, settings, submit, download }} />}
+      {viewing && (() => {
+        const t = invTotals(viewing, settings);
+        const bal = invBalanceState(t.owing);
+        return (
+          <Modal
+            title={"Invoice #" + viewing.invoiceNo}
+            onClose={() => setViewing(null)}
+            headerActions={
+              <ActionMenu
+                ariaLabel="Invoice actions"
+                actions={[
+                  { label: "Preview", icon: FileText, onSelect: () => setPreview(viewing) },
+                  { label: "Download", icon: Download, onSelect: () => download(viewing) },
+                  { label: "Email", icon: Mail, onSelect: () => sendEmail(viewing) },
+                  { label: "Edit", icon: Pencil, onSelect: () => { openEdit(viewing); setViewing(null); } },
+                  { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
+                ]}
+              />
+            }
+          >
+            <div className="detailcard">
+              <div className="detailrows">
+                <DetailRow label="Date" value={fmtDate(viewing.date) || "—"} />
+                <DetailRow label="Client" value={viewing.billTo?.name || "—"} />
+                <DetailRow label="Status" value={<Tag label={viewing.status} color={INV_COLOR[viewing.status] || C.mid} />} />
+                <DetailRow label="Total" value={moneyAED(t.total)} />
+                <DetailRow label="Balance paid" value={moneyAED(t.paid)} />
+                <DetailRow label={bal.label} value={<span style={{ color: bal.color, fontWeight: 700 }}>{bal.text}</span>} />
+              </div>
+              <AttachmentList attachments={viewing.attachments} />
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {edit && (
+        <InvoiceEditor {...{
+          edit, setEdit, clients, settings, submit, saving, saveError,
+          pendingFiles, setPendingFiles, removedAttachmentIds, setRemovedAttachmentIds,
+        }} />
+      )}
 
       {preview && (
         <Modal wide title={"Invoice #" + preview.invoiceNo} onClose={() => setPreview(null)}
           footer={<>
+            <button className="btn s" onClick={() => download(preview)}><Download size={15} />Download</button>
             <button className="btn g" onClick={printFrame}><Printer size={15} />Print / Save PDF</button>
           </>}>
           <iframe ref={frame} className="previewframe" srcDoc={buildInvoiceHTMLv3(preview, settings)} title="invoice" />
         </Modal>
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Move invoice to Bin?"
+          message={"Move invoice #" + confirmDelete.invoiceNo + (confirmDelete.billTo?.name ? " (" + confirmDelete.billTo.name + ")" : "") + " to Bin? You can restore it later from the Bin."}
+          confirmLabel="Move to Bin"
+          danger
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => doDelete(confirmDelete)}
+        />
+      )}
     </>
   );
 }
 
-function InvoiceEditor({ edit, setEdit, clients, settings, submit, download }) {
+function InvoiceEditor({ edit, setEdit, clients, settings, submit, saving, saveError, pendingFiles, setPendingFiles, removedAttachmentIds, setRemovedAttachmentIds }) {
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const set = (patch) => setEdit({ ...edit, ...patch });
   const setItem = (id, patch) => set({ items: edit.items.map((it) => it.id === id ? { ...it, ...patch } : it) });
   const addItem = () => set({ items: [...edit.items, { id: uid(), desc: "", qty: "", price: "" }] });
@@ -2449,23 +2592,29 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, download }) {
     const c = clients.find((x) => x.id === id);
     set({ clientId: id, billTo: c ? { name: c.name, email: c.email, phone: c.phone } : edit.billTo });
   };
+  // Same coupling as before (status Paid -> balancePaid = total), just fed
+  // through the same set() path a MoneyInput field also uses — the value
+  // stored is still the plain numeric string invTotals()/buildInvoiceHTMLv3
+  // already expect.
+  const setStatus = (newStatus) => {
+    if (newStatus === "Paid") set({ status: newStatus, balancePaid: String(t.total) });
+    else set({ status: newStatus });
+  };
   const t = invTotals(edit, settings);
+  const bal = invBalanceState(t.owing);
+  const currency = settings.bank.currency;
 
   return (
     <Modal wide title={edit.id ? "Edit invoice" : "New invoice"} onClose={() => setEdit(null)}
       footer={<>
-        <button className="btn s" onClick={() => setEdit(null)}>Cancel</button>
-        {edit.id && <button className="btn s" onClick={() => download(edit)}><Download size={15} />Download</button>}
-        <button className="btn p" onClick={submit}><Check size={15} />Save invoice</button>
+        <button className="btn s" onClick={() => setEdit(null)} disabled={saving}>Cancel</button>
+        <button className="btn p" onClick={submit} disabled={saving}><Check size={15} />{saving ? "Saving…" : "Save invoice"}</button>
       </>}>
       <div className="frow">
         <Field label="Invoice number"><input value={edit.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} /></Field>
         <Field label="Date"><input type="date" value={edit.date} onChange={(e) => set({ date: e.target.value })} /></Field>
-        <Field label="Status"><select value={edit.status} onChange={(e) => {
-          const newStatus = e.target.value;
-          if (newStatus === "Paid") set({ status: newStatus, balancePaid: String(t.total) });
-          else set({ status: newStatus });
-        }}>{INV_STATUS.map((s) => <option key={s}>{s}</option>)}</select></Field>
+        <Field label="Status"><select value={edit.status} onChange={(e) => setStatus(e.target.value)}>
+          {INV_STATUS.map((s) => <option key={s}>{s}</option>)}</select></Field>
       </div>
       <Field label="Background">
         <div className="themetoggle">
@@ -2473,54 +2622,73 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, download }) {
           <button type="button" className={(edit.theme || "light") === "light" ? "on" : ""} onClick={() => set({ theme: "light" })}>Light</button>
         </div>
       </Field>
-      <Field label="Bill to (client)"><select value={edit.clientId} onChange={(e) => pickClient(e.target.value)}>
-        <option value="">— manual entry —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+      <Field label="Bill to (client)">
+        <button type="button" className="btn s" style={{ width: "100%", justifyContent: "space-between" }} onClick={() => setClientPickerOpen(true)}>
+          <span>{clients.find((c) => c.id === edit.clientId)?.name || "— manual entry —"}</span>
+        </button>
+      </Field>
+      {clientPickerOpen && (
+        <ClientPicker
+          clients={clients}
+          value={edit.clientId}
+          onSelect={pickClient}
+          onClose={() => setClientPickerOpen(false)}
+        />
+      )}
       <div className="frow">
         <Field label="Name"><input value={edit.billTo.name} onChange={(e) => set({ billTo: { ...edit.billTo, name: e.target.value } })} /></Field>
         <Field label="Email"><input value={edit.billTo.email} onChange={(e) => set({ billTo: { ...edit.billTo, email: e.target.value } })} /></Field>
         <Field label="Phone"><input value={edit.billTo.phone} onChange={(e) => set({ billTo: { ...edit.billTo, phone: e.target.value } })} /></Field>
       </div>
 
-      <label style={{ fontSize: 12, fontWeight: 600, display: "block", margin: "6px 0 8px" }}>Line items</label>
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 8 }}>
-        <thead><tr>
-          <th style={{ textAlign: "center", fontSize: 11, color: C.mid, paddingBottom: 6 }}>DESCRIPTION</th>
-          <th style={{ width: 70, fontSize: 11, color: C.mid }}>QTY</th>
-          <th style={{ width: 110, fontSize: 11, color: C.mid }}>PRICE</th>
-          <th style={{ width: 110, textAlign: "center", fontSize: 11, color: C.mid }}>TOTAL</th>
-          <th style={{ width: 34 }}></th></tr></thead>
-        <tbody>
-          {edit.items.map((it) => (
-            <tr key={it.id}>
-              <td className="itemtbl" style={{ padding: "3px 4px 3px 0" }}><input value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="This is where the description goes" /></td>
-              <td className="itemtbl" style={{ padding: 3 }}><input type="number" value={it.qty} onChange={(e) => setItem(it.id, { qty: e.target.value })} /></td>
-              <td className="itemtbl" style={{ padding: 3 }}><input type="number" value={it.price} onChange={(e) => setItem(it.id, { price: e.target.value })} /></td>
-              <td className="num" style={{ padding: "3px 4px", fontVariantNumeric: "tabular-nums", color: C.charcoal }}>{money(num(it.qty) * num(it.price))}</td>
-              <td style={{ textAlign: "center" }}><button className="iconbtn del" onClick={() => delItem(it.id)} style={{ padding: 5 }}><Trash2 size={13} /></button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button className="linkbtn" onClick={addItem}>+ Add line</button>
-
-      <div style={{ display: "flex", gap: 24, marginTop: 18, alignItems: "flex-start" }}>
-        <div style={{ flex: 1 }}>
-          <div className="field" style={{ marginBottom: 8 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <input type="checkbox" style={{ width: "auto" }} checked={edit.vatEnabled} onChange={(e) => set({ vatEnabled: e.target.checked })} />
-              Apply VAT ({Math.round((edit.vatRate ?? settings.vatRate) * 100)}%)
-            </label>
+      <label style={{ fontSize: 12, fontWeight: 600, display: "block", margin: "14px 0 8px" }}>Line items</label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {edit.items.map((it) => (
+          <div key={it.id} className="lineitem">
+            <Field label="Description">
+              <input value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="This is where the description goes" />
+            </Field>
+            <div className="frow" style={{ marginTop: 8 }}>
+              <Field label="Qty"><input type="number" value={it.qty} onChange={(e) => setItem(it.id, { qty: e.target.value })} /></Field>
+              <Field label="Price"><MoneyInput value={it.price} onChange={(v) => setItem(it.id, { price: v })} /></Field>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+              <span style={{ fontSize: 12.5, color: C.mid }}>Total: {currency} {money(num(it.qty) * num(it.price))}</span>
+              <button className="iconbtn del" onClick={() => delItem(it.id)} style={{ padding: 5 }}><Trash2 size={13} /></button>
+            </div>
           </div>
-          <Field label="Balance already paid (AED)"><input type="number" value={edit.balancePaid ?? ""} onChange={(e) => set({ balancePaid: e.target.value })} /></Field>
+        ))}
+      </div>
+      <button className="linkbtn" onClick={addItem} style={{ marginTop: 6 }}>+ Add line</button>
+
+      <div style={{ marginTop: 18 }}>
+        <div className="field" style={{ marginBottom: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" style={{ width: "auto" }} checked={edit.vatEnabled} onChange={(e) => set({ vatEnabled: e.target.checked })} />
+            Apply VAT ({Math.round((edit.vatRate ?? settings.vatRate) * 100)}%)
+          </label>
         </div>
-        <div style={{ width: 280, background: C.surface, border: "1px solid " + C.warmgray, borderRadius: 12, padding: "12px 16px" }}>
-          <Row l="SUB TOTAL" a={money(t.subtotal)} />
+        <Field label="Balance already paid"><MoneyInput value={edit.balancePaid ?? ""} onChange={(v) => set({ balancePaid: v })} /></Field>
+
+        <div style={{ marginTop: 14, background: C.surface, border: "1px solid " + C.warmgray, borderRadius: 12, padding: "12px 16px" }}>
+          <Row l="SUBTOTAL" a={money(t.subtotal)} />
           {t.vatEnabled && <Row l={"VAT " + Math.round(t.vatRate * 100) + "%"} a={money(t.vat)} />}
-          <Row l={"TOTAL " + settings.bank.currency} a={money(t.total)} big />
+          <Row l={"TOTAL " + currency} a={money(t.total)} big />
           <Row l="BALANCE PAID" a={money(t.paid)} />
-          <Row l="BALANCE OWING" a={money(t.owing)} owing />
+          <Row l="BALANCE OWING / OVERPAID" a={bal.text} owing />
         </div>
       </div>
+
+      <label style={{ fontSize: 12, fontWeight: 600, display: "block", margin: "18px 0 8px" }}>Attachments</label>
+      <AttachmentManager
+        existing={edit.attachments}
+        pendingFiles={pendingFiles}
+        removedIds={removedAttachmentIds}
+        onAddFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+        onRemoveExisting={(id) => setRemovedAttachmentIds((prev) => [...prev, id])}
+        onRemovePending={(idx) => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+      />
+      {saveError && <div style={{ color: BAD, fontSize: 12.5, marginTop: 8 }}>{saveError}</div>}
     </Modal>
   );
 }
