@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard, Users, Handshake, GitBranch, FileText, BookOpen,
   Percent, Settings as SettingsIcon, Plus, Trash2, Pencil, X, Check,
-  Download, Printer, Search, Wallet, TrendingUp, AlertCircle, Landmark, LogOut, Menu as MenuIcon, RotateCcw, Mail, MoreVertical, Paperclip,
+  Download, Printer, Search, AlertCircle, LogOut, Menu as MenuIcon, RotateCcw, Mail, MoreVertical, Paperclip,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
@@ -635,7 +635,6 @@ table.tbl{width:100%;border-collapse:collapse}
 .search input{border:none;outline:none;font-size:13px;width:100%;font-family:inherit;background:transparent}
 .pill{font-size:12px;color:${C.mid}}
 .note{background:#22252B;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:9px 13px;font-size:12px;display:flex;gap:9px;align-items:flex-start}
-.itemtbl input{border:1px solid ${C.warmgray};border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit;background:${C.surface};color:${C.charcoal}}
 .lineitem{border:1px solid ${C.warmgray};border-radius:10px;padding:8px 10px;background:${C.surface}}
 .lineitem .field{margin-bottom:6px}
 .linkbtn{background:none;border:none;color:${C.brandBlueMid};font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;padding:0}
@@ -741,7 +740,7 @@ button.attachrow:hover{border-color:${C.mid}}
   /* iOS Safari auto-zooms into any input under 16px font-size on tap — this
      forces every field to 16px on mobile so that never triggers, which is
      what was causing the page to shift/zoom and need manual panning on iPhone. */
-  .field input,.field select,.field textarea,.search input,.itemtbl input,.themetoggle button{font-size:16px !important}
+  .field input,.field select,.field textarea,.search input,.lineitem input,.themetoggle button{font-size:16px !important}
   /* Give the last field/attachment section room to clear the modal's footer
      bar instead of sitting flush against it while scrolling the form body. */
   .mbody{padding-bottom:26px}
@@ -1541,7 +1540,7 @@ export default function App() {
         </aside>
 
         <main className={"main" + (menuOpen ? " blurred" : "")}>
-          {view === "dashboard" && <Dashboard {...{ clients, deals, referrals, invoices, txns, settings, setView }} />}
+          {view === "dashboard" && <Dashboard {...{ clients, deals, referrals, invoices, settings, setView }} />}
           {view === "clients" && <Clients {...{ clients, setClients, deals, invoices, deleteClient }} />}
           {view === "deals" && <Deals {...{ deals, setDeals, clients, trashIt, settings }} />}
           {view === "referrals" && <Referrals {...{ referrals, setReferrals, clients, trashIt }} />}
@@ -1557,7 +1556,7 @@ export default function App() {
 }
 
 /* ---------------------------------------------------------- dashboard */
-function Dashboard({ clients, deals, referrals, invoices, txns, settings, setView }) {
+function Dashboard({ clients, deals, referrals, invoices, settings, setView }) {
   const year = String(new Date().getFullYear());
   const openDeals = deals.filter((d) => !["Won", "Lost"].includes(d.stage));
   const pipeline = openDeals.reduce((s, d) => s + num(d.value), 0);
@@ -2425,7 +2424,7 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
         document.title = "Invoice-" + (inv.invoiceNo || "draft"); // top-level title — this is what the save dialog actually reads
         iframe.contentWindow.focus();
         iframe.contentWindow.print();
-      } catch (e) {
+      } catch {
         alert("Couldn't open the print dialog. Please try again.");
       }
       // The print dialog is modal/blocking in most browsers, so this runs
@@ -2449,7 +2448,7 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
       document.title = "Invoice-" + (preview?.invoiceNo || "draft");
       frame.current.contentWindow.focus();
       frame.current.contentWindow.print();
-    } catch (e) {
+    } catch {
       alert("Use Download, then open the file and press Ctrl/Cmd+P → Save as PDF.");
     } finally {
       // Restore the portal's real title shortly after — printing is async/blocking
@@ -3116,7 +3115,7 @@ function SettingsView(props) {
     r.onload = () => {
       let d;
       try { d = JSON.parse(r.result); }
-      catch (err) { alert("That file couldn't be read as a valid backup."); return; }
+      catch { alert("That file couldn't be read as a valid backup."); return; }
       try {
         // Accept both shapes: manual export uses "clients", "deals", etc.
         // directly; automatic weekly backups use the raw database key names
@@ -3329,7 +3328,7 @@ function SettingsView(props) {
           </p>
         </div>
 
-        <AutoBackupsList {...props} />
+        <AutoBackupsList />
       </div>
     </>
   );
@@ -3342,7 +3341,7 @@ function backupLabel(f) {
     ? new Date(f.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
     : f.name;
 }
-function AutoBackupsList(props) {
+function AutoBackupsList() {
   const [files, setFiles] = useState(null); // null = loading, [] = none found, [...] = list
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
@@ -3355,7 +3354,7 @@ function AutoBackupsList(props) {
       if (error) throw error;
       setFiles(data || []);
       setErr("");
-    } catch (e) {
+    } catch {
       setErr("No automatic backups found yet — this is normal if you haven't set up the weekly backup function, or it hasn't run for the first time yet.");
       setFiles([]);
     }
@@ -3388,7 +3387,7 @@ function AutoBackupsList(props) {
       a.download = name;
       a.click();
       URL.revokeObjectURL(a.href);
-    } catch (e) {
+    } catch {
       alert("Couldn't download that backup. Try again.");
     } finally {
       setBusy("");
