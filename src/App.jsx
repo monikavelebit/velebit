@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard, Users, Handshake, GitBranch, FileText, BookOpen,
   Percent, Settings as SettingsIcon, Plus, Trash2, Pencil, X, Check,
-  Download, Printer, Search, Wallet, TrendingUp, AlertCircle, Landmark, LogOut, Menu as MenuIcon, RotateCcw, Mail,
+  Download, Printer, Search, Wallet, TrendingUp, AlertCircle, Landmark, LogOut, Menu as MenuIcon, RotateCcw, Mail, MoreVertical,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
@@ -423,8 +423,18 @@ function escapeHtml(s) {
 }
 
 /* ================================================================= UI */
-const CSS = `
+export const CSS = `
 .vlb *{box-sizing:border-box}
+/* Kills the native mobile-browser tap flash (a translucent grey/blue box
+   that fills the whole tappable element the instant a finger touches it,
+   before the browser even knows whether this is a tap or the start of a
+   scroll). This is CSS-only and pixel-exempt from every business-logic
+   or persisted-data change: it never affects behaviour, only whether that
+   flash renders. Every reusable tappable surface added in this pass
+   (MobileCard, ActionMenu trigger, Tappable) also uses the pointer-based
+   useTap() hook below instead of onClick, so scrolling a finger across a
+   tappable element cannot itself fire the tap's action either. */
+.vlb *{-webkit-tap-highlight-color:transparent;tap-highlight-color:transparent}
 /* color-scheme:dark makes the browser render native chrome — scrollbars, the
    date-picker popup, select dropdown lists — in dark to match. */
 html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offwhite};color-scheme:dark}
@@ -447,7 +457,14 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offw
 /* Was C.deep, which is now the page background — the button would vanish.
    Brand blue keeps it visible against the dark page. */
 .hamburger{display:none;position:fixed;top:14px;left:14px;z-index:60;background:${C.brandBlueLt};color:#fff;border:none;border-radius:8px;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer}
-.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40}
+/* The sidebar drawer's own backdrop — dims (and, to match the new shared
+   overlay treatment, now also softly blurs) whatever is behind it. */
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:40}
+/* A lighter variant for small anchored popovers (the 3-dot action menu)
+   where a full page-dim would be visually heavy-handed — this is still the
+   same .backdrop element/mechanism (an invisible full-screen tap-catcher
+   that closes the popover on outside tap), just undimmed and unblurred. */
+.backdrop.bare{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
 .main.blurred{filter:blur(4px);pointer-events:none;user-select:none}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .head{padding:26px 34px 10px}
@@ -460,7 +477,7 @@ html,body,#root{width:100%;max-width:none;margin:0;padding:0;background:${C.offw
 .kpi .lab{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:${C.mid};font-weight:600}
 .kpi .v{font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:700;color:${C.brandBlueDark};margin-top:6px;line-height:1}
 .kpi .sub{font-size:12px;color:${C.mid};margin-top:4px}
-.sectitle{display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px}
+.sectitle{display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px}
 .sectitle h2{font-size:22px;color:${C.brandBlueDark};font-weight:700}
 .btn{display:inline-flex;align-items:center;gap:7px;border:none;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
 .btn.p{background:${C.brandBlueLt};color:#fff}
@@ -488,15 +505,24 @@ table.tbl{width:100%;border-collapse:collapse}
 .iconbtn{border:1px solid ${C.warmgray};background:#33373F;border-radius:8px;padding:6px;cursor:pointer;color:${C.mid};display:flex}
 .iconbtn:hover{color:${C.brandBlueDark};border-color:${C.mid}}
 .iconbtn.del:hover{color:${BAD};border-color:#6B4245}
-.overlay{position:fixed;inset:0;background:rgba(8,9,11,.7);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
-.modal{background:#1C1F24;border:1px solid ${C.warmgray};border-radius:18px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+/* Single shared scrim: every app-controlled modal, sheet, detail dialog,
+   confirm dialog and picker mounts through the Overlay component, which
+   applies this one class rather than each one rolling its own backdrop. */
+.overlay{position:fixed;inset:0;background:rgba(8,9,11,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
+.overlay.center{align-items:center}
+.modal{background:#1C1F24;border:1px solid ${C.warmgray};border-radius:16px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .modal.wide{max-width:900px}
-.mhead{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid ${C.warmgray}}
-.mhead h3{font-size:21px;color:${C.brandBlueDark};font-weight:700}
-.mbody{padding:20px 22px;max-height:70vh;overflow:auto}
-.mfoot{padding:16px 22px;border-top:1px solid ${C.warmgray};display:flex;justify-content:flex-end;gap:10px}
-.field{margin-bottom:14px}
-.field label{display:block;font-size:12px;font-weight:600;color:${C.charcoal};margin-bottom:5px;letter-spacing:.2px}
+/* A bottom-sheet-flavoured variant of the same shell (used by ConfirmDialog
+   and the searchable client picker) — same header/body/footer structure,
+   just a narrower default width and it sits centred rather than top-anchored. */
+.modal.sheet{max-width:420px}
+.mhead{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid ${C.warmgray}}
+.mhead h3{font-size:16.5px;color:${C.brandBlueDark};font-weight:700}
+.mbody{padding:16px 18px;max-height:70vh;overflow:auto}
+.mfoot{padding:12px 18px;border-top:1px solid ${C.warmgray};display:flex;justify-content:flex-end;gap:10px}
+.confirmtext{font-size:13.5px;color:${C.charcoal};line-height:1.55}
+.field{margin-bottom:11px}
+.field label{display:block;text-align:left;font-size:12px;font-weight:600;color:${C.charcoal};margin-bottom:5px;letter-spacing:.2px}
 .field input,.field select,.field textarea{width:100%;border:1px solid ${C.warmgray};border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit;color:${C.charcoal};background:${C.surface}}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:${C.brandBlueMid};box-shadow:0 0 0 3px rgba(114,152,185,.25)}
 .vlb ::placeholder{color:${C.mid};opacity:1}
@@ -519,11 +545,41 @@ table.tbl{width:100%;border-collapse:collapse}
 .recharts-default-tooltip{background:${C.surface} !important;border:1px solid ${C.warmgray} !important;border-radius:10px}
 .recharts-tooltip-label,.recharts-tooltip-item{color:${C.charcoal} !important}
 
+/* ---- Compact empty state (EmptyState component) — smaller than .empty,
+   for spots that don't warrant a big centred "nothing here" moment. ---- */
+.emptyc{text-align:center;padding:20px 16px;color:${C.mid};font-size:12.5px}
+.emptyc .disp{font-size:15px;color:${C.brandBlueDark};font-weight:700;margin-bottom:3px}
+
+/* ---- 3-dot action menu (ActionMenu component) ---- */
+.actionmenu{position:relative;display:inline-flex}
+.actionmenu-list{position:absolute;right:0;top:calc(100% + 6px);min-width:170px;background:#1C1F24;border:1px solid ${C.warmgray};border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:55;display:flex;flex-direction:column;gap:1px}
+.actionmenu-item{display:flex;align-items:center;gap:9px;background:transparent;border:none;color:${C.charcoal};font-size:13px;font-family:inherit;text-align:left;padding:10px 11px;border-radius:8px;cursor:pointer;width:100%}
+.actionmenu-item:hover{background:rgba(255,255,255,.06)}
+.actionmenu-item.danger{color:${BAD}}
+.actionmenu-item.danger:hover{background:#2A1D1F}
+
+/* ---- Reusable mobile list card / detail card foundation ---- */
+.mcard{background:${C.surface};border:1px solid ${C.warmgray};border-radius:16px;padding:14px 16px;box-shadow:0 1px 2px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:8px}
+.mcard + .mcard{margin-top:10px}
+.mcard-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.mcard-title{font-weight:600;color:${C.brandBlueDark};font-size:14.5px;line-height:1.3}
+.mcard-sub{font-size:12px;color:${C.mid};margin-top:2px}
+.mcard-rows{display:flex;flex-direction:column;gap:6px}
+.mcard-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px}
+.mcard-row .k{color:${C.mid}}
+.mcard-row .v{color:${C.charcoal};text-align:right;font-variant-numeric:tabular-nums}
+.mcard-notes{font-size:12.5px;color:${C.charcoal};line-height:1.5;white-space:pre-wrap;word-break:break-word}
+/* Full contact/detail text must never truncate — deliberately no
+   text-overflow/ellipsis/nowrap anywhere in this block. */
+.detailcard{display:flex;flex-direction:column;gap:16px}
+.detailcard-section{display:flex;flex-direction:column;gap:6px}
+.detailcard-section h4{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:${C.mid};font-weight:600;margin:0}
+
 /* ---- Mobile responsive ---- */
 @media (max-width: 860px){
   .hamburger{display:flex}
   .backdrop{display:block}
-  .side{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 20px rgba(0,0,0,.3)}
+  .side{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 20px rgba(0,0,0,.3);width:clamp(180px,50vw,230px)}
   .side.open{transform:translateX(0)}
   .main{width:100%;padding-top:54px}
   .head{padding:16px 16px 6px}
@@ -551,18 +607,267 @@ table.tbl{width:100%;border-collapse:collapse}
 function Tag({ label, color }) {
   return <span className="tag" style={{ background: color }}><span className="dot" />{label}</span>;
 }
-function Modal({ title, children, onClose, footer, wide }) {
+
+/* ======================================================= shared: Overlay */
+// Locks background scroll for as long as at least one Overlay is mounted.
+// A counter (not a simple boolean) so a second overlay opening on top of
+// the first — or one closing while another is still open — can't leave the
+// page stuck unscrollable or unlock too early.
+let overlayLockCount = 0;
+function useBodyScrollLock() {
+  useEffect(() => {
+    overlayLockCount++;
+    document.body.style.overflow = "hidden";
+    return () => {
+      overlayLockCount = Math.max(0, overlayLockCount - 1);
+      if (overlayLockCount === 0) document.body.style.overflow = "";
+    };
+  }, []);
+}
+// The single shared backdrop every app-controlled modal, sheet, detail
+// dialog, confirm dialog and picker mounts through — one blur+dim
+// implementation, not one per screen. `bare` drops the dim/blur for small
+// anchored popovers (see ActionMenu) where a full-page dim would be
+// visually heavy for what's essentially a tap-outside-to-close catcher.
+export function Overlay({ children, onClose, center, bare }) {
+  useBodyScrollLock();
   return (
-    <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={"modal" + (wide ? " wide" : "")}>
-        <div className="mhead"><h3>{title}</h3>
-          <button className="iconbtn" onClick={onClose}><X size={18} /></button></div>
-        <div className="mbody">{children}</div>
-        {footer && <div className="mfoot">{footer}</div>}
-      </div>
+    <div
+      className={"overlay" + (center ? " center" : "") + (bare ? " bare" : "")}
+      onMouseDown={(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}
+    >
+      {children}
     </div>
   );
 }
+
+export function Modal({ title, children, onClose, footer, wide, sheet, center }) {
+  return (
+    <Overlay onClose={onClose} center={center ?? sheet}>
+      <div className={"modal" + (wide ? " wide" : "") + (sheet ? " sheet" : "")}>
+        <div className="mhead"><h3>{title}</h3>
+          <button className="iconbtn" onClick={onClose} aria-label="Close"><X size={18} /></button></div>
+        <div className="mbody">{children}</div>
+        {footer && <div className="mfoot">{footer}</div>}
+      </div>
+    </Overlay>
+  );
+}
+
+/* ================================================= shared: ConfirmDialog */
+// Velebit-styled stand-in for window.confirm(). Ready for Phase 3 to swap
+// in at every remaining confirm() call site; see the report for which (if
+// any) call sites already use it as of this pass.
+export function ConfirmDialog({ title, message, confirmLabel = "Confirm", cancelLabel = "Cancel", danger, onConfirm, onCancel }) {
+  return (
+    <Modal
+      title={title}
+      onClose={onCancel}
+      sheet
+      footer={<>
+        <button className="btn s" onClick={onCancel}>{cancelLabel}</button>
+        <button className={"btn " + (danger ? "danger" : "p")} onClick={onConfirm}>{confirmLabel}</button>
+      </>}
+    >
+      <p className="confirmtext">{message}</p>
+    </Modal>
+  );
+}
+
+/* ======================================================= shared: useTap */
+// Distinguishes an intentional tap from the start of a scroll/drag, using
+// pointer move-distance rather than reacting to touchstart or relying on
+// the browser's native click synthesis. No long-press behaviour — a tap is
+// just "pointer went down and came back up within moveThreshold px of
+// where it started, without an intervening cancel."
+function useTap(onTap, moveThreshold = 10) {
+  const start = useRef(null);
+  const moved = useRef(false);
+  return {
+    onPointerDown: (e) => { start.current = { x: e.clientX, y: e.clientY }; moved.current = false; },
+    onPointerMove: (e) => {
+      if (!start.current) return;
+      const dx = e.clientX - start.current.x, dy = e.clientY - start.current.y;
+      if (Math.hypot(dx, dy) > moveThreshold) moved.current = true;
+    },
+    onPointerUp: (e) => {
+      const wasTap = start.current && !moved.current;
+      start.current = null;
+      if (wasTap) onTap(e);
+    },
+    onPointerCancel: () => { start.current = null; moved.current = false; },
+    style: { touchAction: "manipulation" },
+  };
+}
+// Thin wrapper for anything that should behave like a tappable card/row —
+// same useTap contract, just packaged so screens don't each re-derive it.
+export function Tappable({ onTap, className, children, as: As = "div", ...rest }) {
+  const tap = useTap(onTap);
+  return <As className={className} role="button" tabIndex={0} {...tap} {...rest}>{children}</As>;
+}
+
+/* ==================================================== shared: ActionMenu */
+// Reusable 3-dot secondary-action menu. `actions` is an array of
+// { label, icon: Icon, onSelect, danger }. Opens on tap of the trigger
+// (via useTap, so it can't be nudged open by a scroll gesture crossing the
+// button), closes on outside tap via the same bare Overlay/backdrop
+// mechanism used elsewhere, and closes itself after any action fires.
+export function ActionMenu({ actions, ariaLabel = "More actions" }) {
+  const [open, setOpen] = useState(false);
+  const toggle = useTap(() => setOpen((o) => !o));
+  return (
+    <div className="actionmenu">
+      <button className="iconbtn" aria-label={ariaLabel} {...toggle}>
+        <MoreVertical size={15} />
+      </button>
+      {open && (
+        <>
+          <div className="backdrop bare" style={{ display: "block", zIndex: 54 }} onClick={() => setOpen(false)} />
+          <div className="actionmenu-list">
+            {actions.map((a, i) => (
+              <button
+                key={i}
+                className={"actionmenu-item" + (a.danger ? " danger" : "")}
+                onClick={() => { setOpen(false); a.onSelect(); }}
+              >
+                {a.icon && <a.icon size={14} />}{a.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* =================================================== shared: EmptyState */
+// Compact empty-state pattern for spots that don't need the full-size
+// `.empty` treatment (Dashboard chart/recent-invoices panels, Accounting,
+// etc.). `title`/`hint` mirror the existing .empty .disp + <p> shape.
+export function EmptyState({ title, hint }) {
+  return (
+    <div className="emptyc">
+      <div className="disp">{title}</div>
+      {hint && <p style={{ margin: 0 }}>{hint}</p>}
+    </div>
+  );
+}
+
+/* =================================================== shared: MoneyInput */
+// Strips everything but digits, a single leading "-", and a single ".".
+// This is the value that gets stored/calculated on — never the display
+// string with commas in it.
+function parseMoneyInput(text) {
+  const s = String(text ?? "");
+  const neg = s.trim().startsWith("-");
+  let digits = s.replace(/[^0-9.]/g, "");
+  const dot = digits.indexOf(".");
+  if (dot !== -1) digits = digits.slice(0, dot + 1) + digits.slice(dot + 1).replace(/\./g, "");
+  return (neg ? "-" : "") + digits;
+}
+// Adds thousands separators to a clean numeric string for display only.
+function formatMoneyDisplay(clean) {
+  if (clean === "" || clean === null || clean === undefined) return "";
+  const s = String(clean);
+  const neg = s.startsWith("-");
+  const body = neg ? s.slice(1) : s;
+  const [intPart, decPart] = body.split(".");
+  const withCommas = (intPart || "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (neg ? "-" : "") + withCommas + (decPart !== undefined ? "." + decPart : "");
+}
+// Drop-in replacement for a plain numeric <input> on a MONEY field only —
+// never phone numbers, invoice/licence numbers, IDs, IBAN/SWIFT, quantities
+// or dates. `value`/`onChange` carry the same clean numeric string a
+// caller's existing state already holds (e.g. it.price, edit.balancePaid),
+// so num()/invTotals()/buildInvoiceHTMLv3 need no changes — only the input
+// presentation differs.
+export function MoneyInput({ value, onChange, ...rest }) {
+  const clean = value === undefined || value === null ? "" : String(value);
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={formatMoneyDisplay(clean)}
+      onChange={(e) => onChange(parseMoneyInput(e.target.value))}
+      {...rest}
+    />
+  );
+}
+
+/* ============================================== shared: ClientPicker */
+// Searchable client picker for later use in Deals/Referrals/Invoices.
+// Deliberately does NOT decide what happens on selection — `onSelect(id)`
+// is the caller's existing pickClient-style handler, so wiring this into
+// the invoice editor later is a drop-in swap for the current <select> with
+// the exact same autofill semantics, unchanged.
+export function ClientPicker({ clients, value, onSelect, onClose, placeholder = "Search clients…" }) {
+  const [q, setQ] = useState("");
+  const filtered = clients.filter((c) => (c.name + " " + (c.company || "")).toLowerCase().includes(q.toLowerCase()));
+  return (
+    <Modal title="Select client" onClose={onClose} sheet>
+      <div className="search" style={{ maxWidth: "none", marginBottom: 10 }}>
+        <Search size={15} color={C.mid} />
+        <input autoFocus placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "50vh", overflow: "auto" }}>
+        {filtered.map((c) => (
+          <button
+            key={c.id}
+            className="actionmenu-item"
+            style={{ justifyContent: "space-between", background: c.id === value ? "rgba(114,152,185,.15)" : "transparent" }}
+            onClick={() => { onSelect(c.id); onClose(); }}
+          >
+            <span>{c.name}</span>
+            {c.company && <span style={{ color: C.mid, fontSize: 11.5 }}>{c.company}</span>}
+          </button>
+        ))}
+        {!filtered.length && <EmptyState title="No matches" hint="Try a different name or company." />}
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================================ shared: mobile card pieces */
+// Structural building blocks for a mobile list card / detail card, so
+// Phase 3 screens share one pattern instead of each inventing its own.
+// `top` is the card's title/status row; `rows` is an array of
+// { k, v } metadata pairs; `onTap`/`menu` are both optional.
+export function MobileCard({ top, sub, rows, notes, onTap, menu }) {
+  // useTap is always called (Rules of Hooks) with a no-op fallback; its
+  // handlers are only actually spread onto the card when onTap is given.
+  const tap = useTap(onTap || (() => {}));
+  return (
+    <div className="mcard" {...(onTap ? tap : {})}>
+      <div className="mcard-top">
+        <div>
+          <div className="mcard-title">{top}</div>
+          {sub && <div className="mcard-sub">{sub}</div>}
+        </div>
+        {menu}
+      </div>
+      {rows && rows.length > 0 && (
+        <div className="mcard-rows">
+          {rows.map((r, i) => (
+            <div className="mcard-row" key={i}><span className="k">{r.k}</span><span className="v">{r.v}</span></div>
+          ))}
+        </div>
+      )}
+      {notes && <div className="mcard-notes">{notes}</div>}
+    </div>
+  );
+}
+// A labelled section inside a detail view/card — deliberately renders full
+// text with no truncation (see .detailcard-section in CSS): full contact
+// details, notes, etc. must never be ellipsized.
+export function DetailSection({ label, children }) {
+  return (
+    <div className="detailcard-section">
+      <h4>{label}</h4>
+      <div style={{ fontSize: 13.5, color: C.charcoal, lineHeight: 1.5 }}>{children}</div>
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return <div className="field"><label>{label}</label>{children}</div>;
 }
@@ -819,7 +1124,10 @@ export default function App() {
     setTrash((prev) => prev.filter((x) => x.id !== trashId));
   };
   const purgeFromTrash = (trashId) => setTrash((prev) => prev.filter((x) => x.id !== trashId));
-  const purgeAllTrash = () => { if (confirm("Permanently delete everything in the bin? This cannot be undone.")) setTrash([]); };
+  // Confirmation now lives in TrashBin itself, via the shared ConfirmDialog
+  // (see Phase 2) instead of window.confirm() — this function just does the
+  // actual wipe once the user has confirmed.
+  const purgeAllTrash = () => setTrash([]);
 
   const nav = [
     ["dashboard", "Dashboard", LayoutDashboard],
@@ -1665,14 +1973,25 @@ function Line({ l, v, strong, big, muted }) {
 
 /* ----------------------------------------------------------- settings */
 function TrashBin({ trash, trashLabel, trashName, trashDetail, restoreFromTrash, purgeFromTrash, purgeAllTrash }) {
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
   const sorted = trash.slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
   return (
     <>
       <div className="head"><h1>Bin</h1><p>{trash.length} item{trash.length === 1 ? "" : "s"} · restore anything deleted by mistake</p></div>
       <div className="body">
         <div className="sectitle"><span className="pill">{trash.length} in bin</span>
-          {trash.length > 0 && <button className="btn p" onClick={purgeAllTrash}>Empty bin</button>}
+          {trash.length > 0 && <button className="btn p" onClick={() => setConfirmEmpty(true)}>Empty bin</button>}
         </div>
+        {confirmEmpty && (
+          <ConfirmDialog
+            title="Empty bin"
+            message="Permanently delete everything in the bin? This cannot be undone."
+            confirmLabel="Empty bin"
+            danger
+            onCancel={() => setConfirmEmpty(false)}
+            onConfirm={() => { purgeAllTrash(); setConfirmEmpty(false); }}
+          />
+        )}
         {sorted.length ? (
           <div className="tablewrap">
             <table className="tbl">
