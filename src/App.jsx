@@ -636,7 +636,8 @@ table.tbl{width:100%;border-collapse:collapse}
 .pill{font-size:12px;color:${C.mid}}
 .note{background:#22252B;border:1px solid ${C.warmgray};color:${C.charcoal};border-radius:12px;padding:9px 13px;font-size:12px;display:flex;gap:9px;align-items:flex-start}
 .itemtbl input{border:1px solid ${C.warmgray};border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit;background:${C.surface};color:${C.charcoal}}
-.lineitem{border:1px solid ${C.warmgray};border-radius:10px;padding:10px 12px;background:${C.surface}}
+.lineitem{border:1px solid ${C.warmgray};border-radius:10px;padding:8px 10px;background:${C.surface}}
+.lineitem .field{margin-bottom:6px}
 .linkbtn{background:none;border:none;color:${C.brandBlueMid};font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;padding:0}
 .previewframe{width:100%;height:78vh;border:1px solid ${C.warmgray};border-radius:12px;background:${C.surface}}
 .stat2{display:flex;gap:10px;flex-wrap:wrap}
@@ -681,10 +682,10 @@ table.tbl{width:100%;border-collapse:collapse}
    still never truncating: long values wrap onto a second line instead of
    being cut off or squeezed. */
 .detailrows{display:flex;flex-direction:column;border:1px solid ${C.warmgray};border-radius:12px;overflow:hidden}
-.detailrow{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:8px 12px;border-bottom:1px solid #2A2D33;font-size:13px}
+.detailrow{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:9px 12px;border-bottom:1px solid #2A2D33;font-size:13px;line-height:1.4}
 .detailrows .detailrow:last-child{border-bottom:none}
-.detailrow .k{color:${C.mid};flex-shrink:0;font-size:11.5px}
-.detailrow .v{color:${C.charcoal};text-align:right;word-break:break-word;font-weight:500}
+.detailrow .k{color:${C.mid};flex-shrink:0;font-size:11.5px;padding-top:2px}
+.detailrow .v{color:${C.charcoal};text-align:right;word-break:break-word;font-weight:500;display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:4px}
 /* Attachment rows — filenames wrap (never ellipsize, never force
    horizontal scroll) and the row itself is a full touch target. */
 .attachlist{display:flex;flex-direction:column;gap:6px}
@@ -721,11 +722,11 @@ button.attachrow:hover{border-color:${C.mid}}
   .backdrop{display:block}
   .side{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 20px rgba(0,0,0,.3);width:clamp(180px,50vw,230px)}
   .side.open{transform:translateX(0)}
-  .main{width:100%;padding-top:54px}
-  .head{padding:16px 16px 6px}
+  .main{width:100%;padding-top:46px}
+  .head{padding:6px 16px 6px}
   .head h1{font-size:22px}
   .head p{font-size:12px;margin-top:2px}
-  .body{padding:10px 16px 60px}
+  .body{padding:6px 16px 60px}
   .grid{grid-template-columns:1fr !important}
   .kpi{min-width:0}
   .frow{flex-direction:column;gap:14px}
@@ -741,6 +742,9 @@ button.attachrow:hover{border-color:${C.mid}}
      forces every field to 16px on mobile so that never triggers, which is
      what was causing the page to shift/zoom and need manual panning on iPhone. */
   .field input,.field select,.field textarea,.search input,.itemtbl input,.themetoggle button{font-size:16px !important}
+  /* Give the last field/attachment section room to clear the modal's footer
+     bar instead of sitting flush against it while scrolling the form body. */
+  .mbody{padding-bottom:26px}
 }
 `;
 
@@ -1816,7 +1820,7 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
 
       {sortSheet && (
         <Modal title="Sort clients" onClose={() => setSortSheet(false)} sheet>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "60vh", overflow: "auto" }}>
             {SORT_OPTIONS.map(([val, label]) => (
               <button
                 key={val}
@@ -2043,7 +2047,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
       )}
       {stageSheet && (
         <Modal title="Stage" onClose={() => setStageSheet(false)} sheet>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "60vh", overflow: "auto" }}>
             {[["all", "All stages"], ...DEAL_STAGES.map((s) => [s, s])].map(([val, label]) => (
               <button key={val} className="actionmenu-item" style={{ justifyContent: "space-between", background: stageFilter === val ? "rgba(114,152,185,.15)" : "transparent" }}
                 onClick={() => { setStageFilter(val); setStageSheet(false); }}>
@@ -2097,7 +2101,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
               {SERVICES.map((s) => <option key={s}>{s}</option>)}</select></Field>
           </div>
           <div className="frow">
-            <Field label="Value (AED)"><input type="number" value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })} /></Field>
+            <Field label="Value (AED)"><MoneyInput value={edit.value} onChange={(v) => setEdit({ ...edit, value: v })} /></Field>
             <Field label="Stage"><select value={edit.stage} onChange={(e) => setEdit({ ...edit, stage: e.target.value })}>{DEAL_STAGES.map((s) => <option key={s}>{s}</option>)}</select></Field>
             <Field label="Expected close"><input type="date" value={edit.closeDate} onChange={(e) => setEdit({ ...edit, closeDate: e.target.value })} /></Field>
           </div>
@@ -2303,9 +2307,12 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
 // App-UI-only balance-state formatting for an invoice's owing/overpaid amount.
 // Never used by buildInvoiceHTMLv3 — the printed/saved BALANCE DUE line keeps
 // its own existing (possibly negative) numeric rendering untouched.
-function invBalanceState(owing) {
+function invBalanceState(owing, total) {
   if (owing > 0.004) return { label: "Balance owing", text: moneyAED(owing), color: BAD };
   if (owing < -0.004) return { label: "Balance", text: "Overpaid: " + moneyAED(Math.abs(owing)), color: OK };
+  // A brand-new invoice with total 0 hasn't been "paid" yet — that wording
+  // only makes sense once there's an actual balance to have cleared.
+  if (!total) return { label: "Balance", text: moneyAED(0), color: OK };
   return { label: "Balance", text: "Paid in full", color: OK };
 }
 
@@ -2497,7 +2504,7 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
         <div className="hide-desktop">
           {invoices.length ? invoices.slice().sort((a, b) => (parseInt(b.invoiceNo, 10) || 0) - (parseInt(a.invoiceNo, 10) || 0)).map((i) => {
             const t = invTotals(i, settings);
-            const bal = invBalanceState(t.owing);
+            const bal = invBalanceState(t.owing, t.total);
             return (
               <MobileCard
                 key={i.id}
@@ -2518,7 +2525,7 @@ function Invoices({ invoices, setInvoices, clients, settings, setSettings, trash
 
       {viewing && (() => {
         const t = invTotals(viewing, settings);
-        const bal = invBalanceState(t.owing);
+        const bal = invBalanceState(t.owing, t.total);
         return (
           <Modal
             title={"Invoice #" + viewing.invoiceNo}
@@ -2601,7 +2608,7 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, saving, saveE
     else set({ status: newStatus });
   };
   const t = invTotals(edit, settings);
-  const bal = invBalanceState(t.owing);
+  const bal = invBalanceState(t.owing, t.total);
   const currency = settings.bank.currency;
 
   return (
@@ -2641,18 +2648,18 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, saving, saveE
         <Field label="Phone"><input value={edit.billTo.phone} onChange={(e) => set({ billTo: { ...edit.billTo, phone: e.target.value } })} /></Field>
       </div>
 
-      <label style={{ fontSize: 12, fontWeight: 600, display: "block", margin: "14px 0 8px" }}>Line items</label>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <label style={{ fontSize: 12, fontWeight: 600, display: "block", margin: "12px 0 6px" }}>Line items</label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {edit.items.map((it) => (
           <div key={it.id} className="lineitem">
             <Field label="Description">
               <input value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="This is where the description goes" />
             </Field>
-            <div className="frow" style={{ marginTop: 8 }}>
+            <div className="frow" style={{ marginTop: 6 }}>
               <Field label="Qty"><input type="number" value={it.qty} onChange={(e) => setItem(it.id, { qty: e.target.value })} /></Field>
               <Field label="Price"><MoneyInput value={it.price} onChange={(v) => setItem(it.id, { price: v })} /></Field>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
               <span style={{ fontSize: 12.5, color: C.mid }}>Total: {currency} {money(num(it.qty) * num(it.price))}</span>
               <button className="iconbtn del" onClick={() => delItem(it.id)} style={{ padding: 5 }}><Trash2 size={13} /></button>
             </div>
@@ -2661,8 +2668,8 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, saving, saveE
       </div>
       <button className="linkbtn" onClick={addItem} style={{ marginTop: 6 }}>+ Add line</button>
 
-      <div style={{ marginTop: 18 }}>
-        <div className="field" style={{ marginBottom: 8 }}>
+      <div style={{ marginTop: 14 }}>
+        <div className="field" style={{ marginBottom: 6 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
             <input type="checkbox" style={{ width: "auto" }} checked={edit.vatEnabled} onChange={(e) => set({ vatEnabled: e.target.checked })} />
             Apply VAT ({Math.round((edit.vatRate ?? settings.vatRate) * 100)}%)
@@ -2670,7 +2677,7 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, saving, saveE
         </div>
         <Field label="Balance already paid"><MoneyInput value={edit.balancePaid ?? ""} onChange={(v) => set({ balancePaid: v })} /></Field>
 
-        <div style={{ marginTop: 14, background: C.surface, border: "1px solid " + C.warmgray, borderRadius: 12, padding: "12px 16px" }}>
+        <div style={{ marginTop: 10, background: C.surface, border: "1px solid " + C.warmgray, borderRadius: 12, padding: "10px 14px" }}>
           <Row l="SUBTOTAL" a={money(t.subtotal)} />
           {t.vatEnabled && <Row l={"VAT " + Math.round(t.vatRate * 100) + "%"} a={money(t.vat)} />}
           <Row l={"TOTAL " + currency} a={money(t.total)} big />
@@ -2679,7 +2686,7 @@ function InvoiceEditor({ edit, setEdit, clients, settings, submit, saving, saveE
         </div>
       </div>
 
-      <label style={{ fontSize: 12, fontWeight: 600, display: "block", margin: "18px 0 8px" }}>Attachments</label>
+      <div style={{ marginTop: 10 }} />
       <AttachmentManager
         existing={edit.attachments}
         pendingFiles={pendingFiles}
@@ -3318,7 +3325,7 @@ function SettingsView(props) {
             <input type="file" accept="application/json" style={{ display: "none" }} onChange={importAll} /></label>
           <span className="pill">Your data lives privately in this app, on your account.</span>
           <p style={{ width: "100%", fontSize: 11.5, color: C.mid, margin: 0 }}>
-            This backup contains your records and their attachment details (filename, size, etc.) — not the attachment files themselves, which stay in secure file storage. Restoring a backup brings records back correctly as long as those stored files still exist.
+            Includes records + attachment details, not the files (those stay in Storage). Restore reconnects them if the files are still there.
           </p>
         </div>
 
