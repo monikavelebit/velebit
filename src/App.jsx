@@ -65,12 +65,15 @@ function queueWrite(k, fn) {
 }
 const store = {
   async get(k) {
-    try {
-      const { data, error } = await supabase.from("kv_store").select("value, updated_at").eq("key", k).maybeSingle();
-      if (error) throw error;
-      if (data) lastKnownUpdatedAt[k] = data.updated_at;
-      return data ? { value: data.value } : null;
-    } catch (e) { return k in mem ? { value: mem[k] } : null; }
+    // Deliberately does NOT catch-and-fall-back-to-mem here. A failed read
+    // must reach load() below as a real failure, not get silently absorbed
+    // into something that looks identical to "this key legitimately has no
+    // row yet" — that's what let a transient read failure look exactly like
+    // an empty dataset and get saved straight back over real data.
+    const { data, error } = await supabase.from("kv_store").select("value, updated_at").eq("key", k).maybeSingle();
+    if (error) throw error;
+    if (data) lastKnownUpdatedAt[k] = data.updated_at;
+    return data ? { value: data.value } : null;
   },
   async set(k, v, force) {
     // Before writing, check whether the database has been updated more
@@ -107,9 +110,32 @@ const store = {
     return { value: v };
   },
 };
+// Returns { ok: true, value } for a confirmed read — including a confirmed
+// "this key has no row yet" case, which legitimately resolves to fb — or
+// { ok: false, error } when the read itself failed. Callers must NOT treat
+// ok:false as if it were an empty dataset; the caller decides what to show
+// and must not persist `fb` back over whatever is actually stored remotely.
 async function load(k, fb) {
-  try { const r = await store.get(k); return r && r.value !== undefined && r.value !== null ? r.value : fb; }
-  catch (e) { return fb; }
+  try {
+    const r = await store.get(k);
+    const value = r && r.value !== undefined && r.value !== null ? r.value : fb;
+    return { ok: true, value };
+  } catch (e) {
+    return { ok: false, error: e };
+  }
+}
+// Non-interactive write used by the restore flow (see importAll in
+// SettingsView), which needs to know per-key success/failure to coordinate
+// a multi-key restore and roll back already-written keys if one fails.
+// Unlike save() below, it never shows its own alert/confirm — the caller is
+// responsible for reporting the outcome once the whole sequence is known.
+async function trySave(k, v, force) {
+  try {
+    await queueWrite(k, () => store.set(k, v, force));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e };
+  }
 }
 async function save(k, v) {
   try {
@@ -206,6 +232,15 @@ const today = () => {
 const fmtDate = (iso) => {
   if (!iso) return "";
   const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+};
+// For full ISO datetime strings (e.g. deletedAt), unlike fmtDate above which
+// expects a date-only "YYYY-MM-DD" string and appends a time component —
+// appending one here would double up and produce an Invalid Date.
+const fmtDateTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 };
 const yearOf = (iso) => (iso || "").slice(0, 4);
@@ -582,6 +617,16 @@ function LoginScreen() {
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = checking, null = logged out
   const [ready, setReady] = useState(false);
+  // null = no load error; otherwise an array of human-readable dataset names
+  // that failed to load on the most recent attempt. While this is set, the
+  // app shows a blocked/retry screen instead of the workspace, and — because
+  // `loaded.current` below is only ever set to true after every dataset has
+  // loaded successfully — none of the save effects further down can fire.
+  // That's what actually prevents a failed read from ever being saved back
+  // as an empty dataset: there is no path from "load failed" to "loaded.current
+  // = true" other than a fully successful (re)load.
+  const [loadError, setLoadError] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [view, setView] = useState("dashboard");
   const [clients, setClients] = useState([]);
   const [deals, setDeals] = useState([]);
@@ -609,6 +654,45 @@ export default function App() {
     document.head.appendChild(l);
   }, []);
 
+  // Attempts to load every dataset. Each one is only committed to React
+  // state (via its setter) if its own read actually succeeded — a failed
+  // read leaves that piece of state exactly as it was, it is never set to
+  // its empty fallback. If anything failed, loaded.current is NOT set to
+  // true, ready is NOT set to true, and loadError lists what failed so the
+  // UI can show a blocked/retry screen. Only when every single dataset
+  // loads successfully does this mark the app ready and allow the save
+  // effects below to run at all.
+  const loadAll = async () => {
+    setLoading(true);
+    const specs = [
+      ["Clients", "velebit:clients", [], setClients],
+      ["Deals", "velebit:deals", [], setDeals],
+      ["Referrals", "velebit:referrals", [], setReferrals],
+      ["Invoices", "velebit:invoices", [], setInvoices],
+      ["Transactions", "velebit:txns", [], setTxns],
+      ["Bin", "velebit:trash", [], setTrash],
+      ["Settings", "velebit:settings", DEFAULT_SETTINGS, setSettings],
+    ];
+    const failed = [];
+    for (const [label, key, fb, setter] of specs) {
+      const r = await load(key, fb);
+      if (r.ok) {
+        setter(r.value);
+      } else {
+        console.error("Load failed for", key, r.error);
+        failed.push(label);
+      }
+    }
+    setLoading(false);
+    if (failed.length) {
+      setLoadError(failed);
+      return;
+    }
+    setLoadError(null);
+    loaded.current = true;
+    setReady(true);
+  };
+
   useEffect(() => {
     if (!session) return;
     // Only re-run this when the actual logged-in USER changes (a genuine
@@ -619,17 +703,7 @@ export default function App() {
     // token refresh happened to land mid-session, which is what caused
     // data to "revert" for no visible reason during testing.
     if (loaded.current) return;
-    (async () => {
-      setClients(await load("velebit:clients", []));
-      setDeals(await load("velebit:deals", []));
-      setReferrals(await load("velebit:referrals", []));
-      setInvoices(await load("velebit:invoices", []));
-      setTxns(await load("velebit:txns", []));
-      setTrash(await load("velebit:trash", []));
-      setSettings(await load("velebit:settings", DEFAULT_SETTINGS));
-      loaded.current = true;
-      setReady(true);
-    })();
+    loadAll();
   }, [session?.user?.id]);
   useEffect(() => {
     if (loaded.current) {
@@ -654,7 +728,7 @@ export default function App() {
     if (t.type === "deal") return t.data.title || "—";
     if (t.type === "referral") return t.data.broker || "Referral";
     if (t.type === "invoice") return "Invoice #" + t.data.invoiceNo;
-    if (t.type === "txn") return t.data.desc || "—";
+    if (t.type === "txn") return t.data.description || "—";
     return "—";
   };
   const trashDetail = (t) => {
@@ -720,6 +794,32 @@ export default function App() {
   }
 
   if (!ready) {
+    // A load failure is shown as an explicit blocked screen, never as the
+    // normal (empty-looking) workspace — there is no path through here that
+    // lets the app render as if it just had no data.
+    if (loadError) {
+      return (
+        <>
+          <style>{CSS}</style>
+          <div className="vlb" style={{ alignItems: "center", justifyContent: "center" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.charcoal, maxWidth: 420, textAlign: "center", padding: 24 }}>
+              <AlertCircle size={34} color={BAD} style={{ marginBottom: 12 }} />
+              <div className="disp" style={{ fontSize: 20, color: C.brandBlueDark, marginBottom: 8 }}>Couldn't load your data</div>
+              <p style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.6 }}>
+                This usually means a connection problem. Nothing has been changed or erased —
+                your data is safe, this screen just couldn't confirm it yet.
+              </p>
+              <p style={{ fontSize: 12.5, color: C.mid, marginTop: 6 }}>
+                Failed to load: {loadError.join(", ")}
+              </p>
+              <button className="btn p" style={{ marginTop: 16 }} disabled={loading} onClick={loadAll}>
+                <RotateCcw size={15} />{loading ? "Retrying…" : "Retry"}
+              </button>
+            </div>
+          </div>
+        </>
+      );
+    }
     return (
       <>
         <style>{CSS}</style>
@@ -1539,7 +1639,7 @@ function TrashBin({ trash, trashLabel, trashName, trashDetail, restoreFromTrash,
                     <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{trashName(t)}</td>
                     <td>{trashLabel[t.type] || t.type}</td>
                     <td style={{ fontSize: 12.5, color: C.mid }}>{trashDetail(t)}</td>
-                    <td style={{ fontSize: 12.5 }}>{fmtDate(t.deletedAt)}</td>
+                    <td style={{ fontSize: 12.5 }}>{fmtDateTime(t.deletedAt)}</td>
                     <td><div className="rowact">
                       <button className="iconbtn" title="Restore" onClick={() => restoreFromTrash(t.id)}><RotateCcw size={14} /></button>
                       <button className="iconbtn del" title="Delete forever" onClick={() => { if (confirm(t.type === "client" ? "Permanently delete this client and everything bundled with it? This cannot be undone." : "Permanently delete this item? This cannot be undone.")) purgeFromTrash(t.id); }}><Trash2 size={14} /></button>
@@ -1576,8 +1676,10 @@ function SettingsView(props) {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => {
+      let d;
+      try { d = JSON.parse(r.result); }
+      catch (err) { alert("That file couldn't be read as a valid backup."); return; }
       try {
-        const d = JSON.parse(r.result);
         // Accept both shapes: manual export uses "clients", "deals", etc.
         // directly; automatic weekly backups use the raw database key names
         // "velebit:clients", "velebit:deals", etc. Support both so neither
@@ -1615,12 +1717,76 @@ function SettingsView(props) {
           "a few seconds later with its own (older) data, with no warning."
         )) return;
 
-        props.setClients(newClients); props.setDeals(newDeals); props.setReferrals(newReferrals);
-        props.setInvoices(newInvoices); props.setTxns(newTxns);
-        if (props.setTrash) props.setTrash(newTrash);
-        if (newSettings) { setSettings(newSettings); setS(newSettings); }
-        alert("Backup restored.");
-      } catch (err) { alert("That file couldn't be read as a valid backup."); }
+        // Coordinated, rollback-protected restore. This is NOT a database
+        // transaction — kv_store has no cross-row transaction/RPC support,
+        // and adding one would be a schema change out of scope for this
+        // pass — so "atomic" would overstate what this does. Instead:
+        //   1. Capture the current (pre-restore) value of every key, which
+        //      is known-good because it's exactly what's already loaded.
+        //   2. Write each new value to Supabase directly, one key at a
+        //      time, in a fixed order, waiting for each to actually
+        //      succeed before starting the next.
+        //   3. If one write fails, stop immediately — no further keys are
+        //      written — and best-effort roll back every key already
+        //      written in this run back to its captured pre-restore value.
+        //   4. Only after every key has been written successfully do we
+        //      update the on-screen React state to reflect the restore.
+        // This does not protect against a write succeeding on the server
+        // but the confirmation of that success never reaching this tab
+        // (e.g. the network drops right after Supabase commits it) — that
+        // failure mode is indistinguishable from a real failure from here,
+        // so it is handled the same way: treated as failed, and rolled
+        // back. In that specific edge case the rollback write would then
+        // overwrite a value the server actually already had, which is the
+        // intended, safe outcome (reverting to pre-restore state) rather
+        // than leaving the dataset newly-mixed.
+        (async () => {
+          const plan = [
+            ["velebit:clients", newClients, props.clients, props.setClients],
+            ["velebit:deals", newDeals, props.deals, props.setDeals],
+            ["velebit:referrals", newReferrals, props.referrals, props.setReferrals],
+            ["velebit:invoices", newInvoices, props.invoices, props.setInvoices],
+            ["velebit:txns", newTxns, props.txns, props.setTxns],
+            ["velebit:trash", newTrash, props.trash, props.setTrash],
+          ];
+          if (newSettings) plan.push(["velebit:settings", newSettings, settings, setSettings]);
+
+          const written = []; // keys actually written to Supabase this run, oldest first
+          for (const [key, newVal, oldVal, setter] of plan) {
+            // force=true: restore is an explicit, user-confirmed full
+            // replace (the dialogs above already told the user to close
+            // every other tab/device first), so the usual "did someone
+            // else save something newer" conflict check doesn't apply —
+            // overwriting is the whole point of restoring.
+            const res = await trySave(key, newVal, true);
+            if (!res.ok) {
+              const rollbackFailures = [];
+              for (const [rKey, , rOldVal] of written) {
+                const rr = await trySave(rKey, rOldVal, true);
+                if (!rr.ok) rollbackFailures.push(rKey.replace("velebit:", ""));
+              }
+              alert(
+                "⚠️ Restore failed while saving " + key.replace("velebit:", "") + ".\n\n" +
+                (written.length === 0
+                  ? "Nothing was written yet, so nothing on the server changed."
+                  : rollbackFailures.length === 0
+                    ? "The " + written.length + " section(s) already written this run were rolled back to their previous values. Nothing should have changed overall."
+                    : "Attempted to roll back the " + written.length + " section(s) already written this run, but rollback itself failed for: " + rollbackFailures.join(", ") + ". Please check that data carefully and re-export a fresh backup before doing anything else."
+                ) +
+                "\n\nOn-screen data was not changed — reload only if you suspect the two are now out of sync.\n\nTechnical detail: " + (res.error?.message || res.error)
+              );
+              return;
+            }
+            written.push([key, newVal, oldVal, setter]);
+          }
+
+          // Every key wrote successfully — now, and only now, reflect the
+          // restore on screen.
+          for (const [, newVal, , setter] of written) setter(newVal);
+          if (newSettings) setS(newSettings);
+          alert("Backup restored.");
+        })();
+      } catch (err) { alert("Restore failed unexpectedly: " + (err?.message || err)); }
     };
     r.readAsText(f);
   };
