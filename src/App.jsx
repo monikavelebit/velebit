@@ -773,7 +773,19 @@ export function Overlay({ children, onClose, center, bare }) {
   return (
     <div
       className={"overlay" + (center ? " center" : "") + (bare ? " bare" : "")}
-      onMouseDown={(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}
+      // pointerdown, not onMouseDown: the overlay is top-anchored and can be
+      // taller than the modal box it wraps, so a card tapped low on screen
+      // (e.g. the bottom-most visible card in a list) has its tap land
+      // below the modal box, on this backdrop itself. Opening the modal
+      // mounts this backdrop synchronously, and the browser then
+      // synthesizes a trailing compatibility mousedown/mouseup/click for
+      // that same touch, targeting whatever is now at that point — this
+      // backdrop. onMouseDown caught that synthetic mousedown and closed
+      // the modal within the same gesture that opened it, which read as
+      // "tapping that card does nothing." Browsers don't re-synthesize a
+      // pointerdown for that trailing sequence, so this is immune to it —
+      // see the identical fix already applied to ActionMenu's backdrop.
+      onPointerDown={(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}
     >
       {children}
     </div>
