@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard, Users, Handshake, GitBranch, FileText, BookOpen,
   Percent, Settings as SettingsIcon, Plus, Trash2, Pencil, X, Check,
-  Download, Printer, Search, Wallet, TrendingUp, AlertCircle, Landmark, LogOut, Menu as MenuIcon, RotateCcw, Mail, MoreVertical,
+  Download, Printer, Search, Wallet, TrendingUp, AlertCircle, Landmark, LogOut, Menu as MenuIcon, RotateCcw, Mail, MoreVertical, Paperclip,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
@@ -222,6 +222,80 @@ function expensesCSV(txns) {
 
 /* --------------------------------------------------------------- utils */
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/* ============================================================ attachments
+   Shared machinery for Client/Deal(/Invoice) attachments. Files live in a
+   dedicated private Storage bucket ("attachments"), separate from the
+   existing "backups" bucket — never mixed with it. Records only ever hold
+   an additive `attachments: []` metadata array (id/name/path/size/type/
+   uploadedAt) — no base64, no binary content in kv_store. Old records
+   with no `attachments` key are read as `record.attachments || []`
+   everywhere below; nothing bulk-backfills that key onto existing rows. */
+const ATTACHMENTS_BUCKET = "attachments";
+const ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+const ATTACHMENT_MAX_COUNT = 20;
+// Extension-based, not MIME-based: mobile browsers frequently report an
+// empty or generic (application/octet-stream) type for ordinary business
+// documents, so trusting the extension is the more reliable signal here.
+const ATTACHMENT_ALLOWED_EXT = ["pdf", "png", "jpg", "jpeg", "webp", "doc", "docx", "xls", "xlsx", "csv", "txt"];
+
+function fileExt(name) {
+  const m = /\.([a-zA-Z0-9]+)$/.exec(String(name || ""));
+  return m ? m[1].toLowerCase() : "";
+}
+// Storage object keys only allow a safe character set — this never touches
+// the metadata's `name` field, which keeps the real original filename.
+function sanitizeFilename(name) {
+  const cleaned = String(name || "file").trim().replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return (cleaned || "file").slice(-140);
+}
+function formatFileSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+// `currentCount` lets the caller enforce the 20-per-record cap across a
+// whole batch of newly selected files, not just one at a time.
+function validateAttachmentFile(file, currentCount) {
+  if (currentCount >= ATTACHMENT_MAX_COUNT) return { ok: false, reason: "Maximum of " + ATTACHMENT_MAX_COUNT + " attachments per record." };
+  if (file.size > ATTACHMENT_MAX_SIZE) return { ok: false, reason: file.name + " is larger than 25 MB." };
+  if (!ATTACHMENT_ALLOWED_EXT.includes(fileExt(file.name))) return { ok: false, reason: file.name + " isn't a supported file type." };
+  return { ok: true };
+}
+// Uploads one file and returns its metadata record. Path shape:
+// {kind}/{recordId}/{attachmentId}-{safeFilename} — kind is "clients",
+// "deals", or "invoices", matching the record type it belongs to.
+async function uploadAttachmentFile(kind, recordId, file) {
+  const id = uid();
+  const path = kind + "/" + recordId + "/" + id + "-" + sanitizeFilename(file.name);
+  const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).upload(path, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+  if (error) throw error;
+  return { id, name: file.name, path, size: file.size, type: file.type || "", uploadedAt: new Date().toISOString() };
+}
+// Private bucket — every open/download goes through a freshly generated,
+// short-lived signed URL at the moment of use, never a permanent public link.
+async function getAttachmentSignedUrl(path) {
+  const { data, error } = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(path, 60);
+  if (error) throw error;
+  return data.signedUrl;
+}
+// Best-effort bulk cleanup. Supabase's storage .remove() doesn't report
+// per-file failures within a batch — only a call-level error (e.g. the
+// whole request failed) or success (already-missing objects are treated
+// as fine, not an error). So "ok:false" here means the whole batch could
+// not be confirmed removed, not that a specific file is known to remain;
+// callers report that honestly rather than claiming per-file certainty.
+async function removeAttachmentObjects(paths) {
+  if (!paths || !paths.length) return { ok: true, failedPaths: [] };
+  const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).remove(paths);
+  if (error) return { ok: false, failedPaths: paths, error };
+  return { ok: true, failedPaths: [] };
+}
+
 const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 const money = (n) =>
   (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -610,6 +684,15 @@ table.tbl{width:100%;border-collapse:collapse}
 .detailrows .detailrow:last-child{border-bottom:none}
 .detailrow .k{color:${C.mid};flex-shrink:0;font-size:11.5px}
 .detailrow .v{color:${C.charcoal};text-align:right;word-break:break-word;font-weight:500}
+/* Attachment rows — filenames wrap (never ellipsize, never force
+   horizontal scroll) and the row itself is a full touch target. */
+.attachlist{display:flex;flex-direction:column;gap:6px}
+.attachrow{display:flex;align-items:center;gap:8px;width:100%;background:${C.surface};border:1px solid ${C.warmgray};border-radius:10px;padding:9px 10px;font-family:inherit;font-size:12.5px;color:${C.charcoal};text-align:left;cursor:pointer}
+button.attachrow:hover{border-color:${C.mid}}
+.attachrow.static{cursor:default}
+.attachrow .attachname{flex:1;min-width:0;word-break:break-word;white-space:normal}
+.attachrow .attachmeta{flex-shrink:0;color:${C.mid};font-size:11px}
+.attachrow .iconbtn{margin-left:2px}
 
 /* ---- Responsive table/card toggle: every screen renders BOTH a desktop
    .tablewrap and a mobile .mobile-cards block; these two rules pick exactly
@@ -944,6 +1027,103 @@ export function DetailRow({ label, value }) {
   );
 }
 
+/* ================================================= shared: attachments UI */
+// Read-only viewer for a Detail card — "Attachments (n)" plus a compact
+// tap-to-open list. Works without ever entering Edit. Generates a signed
+// URL at the moment of tap (never stores or reuses a long-lived link).
+export function AttachmentList({ attachments }) {
+  const list = attachments || [];
+  const [openingId, setOpeningId] = useState("");
+  const [error, setError] = useState("");
+  const open = async (a) => {
+    setOpeningId(a.id);
+    setError("");
+    try {
+      const url = await getAttachmentSignedUrl(a.path);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      setError("Couldn't open \"" + a.name + "\" — the file may be missing from storage.");
+    } finally {
+      setOpeningId("");
+    }
+  };
+  return (
+    <div className="detailcard-section">
+      <h4>Attachments ({list.length})</h4>
+      {list.length === 0 ? (
+        <div className="emptyc" style={{ padding: "6px 0" }}><div className="disp" style={{ fontSize: 13 }}>No attachments</div></div>
+      ) : (
+        <div className="attachlist">
+          {list.map((a) => (
+            <Tappable key={a.id} as="button" className="attachrow" onTap={() => open(a)} aria-label={"Open " + a.name}>
+              <Paperclip size={14} style={{ flexShrink: 0, color: C.mid }} />
+              <span className="attachname">{a.name}</span>
+              <span className="attachmeta">{openingId === a.id ? "Opening…" : formatFileSize(a.size)}</span>
+            </Tappable>
+          ))}
+        </div>
+      )}
+      {error && <div style={{ color: BAD, fontSize: 12, marginTop: 6 }}>{error}</div>}
+    </div>
+  );
+}
+// Editable attachment section for an Edit form. Deliberately does NOT
+// upload or delete anything itself — it only tracks what the user picked
+// (`pendingFiles`) and what they marked for removal (`removedIds`) as
+// local UI state; the caller's submit handler does the actual upload/save/
+// cleanup in the safe order the record type requires. This keeps "add one
+// more file" from ever forcing the user to redo the whole list.
+export function AttachmentManager({ existing, pendingFiles, removedIds, onAddFiles, onRemoveExisting, onRemovePending }) {
+  const inputRef = useRef(null);
+  const [localError, setLocalError] = useState("");
+  const visibleExisting = (existing || []).filter((a) => !removedIds.includes(a.id));
+  const totalCount = visibleExisting.length + pendingFiles.length;
+
+  const handleFiles = (fileList) => {
+    setLocalError("");
+    const files = Array.from(fileList || []);
+    const accepted = [];
+    let count = totalCount;
+    for (const f of files) {
+      const v = validateAttachmentFile(f, count);
+      if (!v.ok) { setLocalError(v.reason); continue; }
+      accepted.push(f);
+      count++;
+    }
+    if (accepted.length) onAddFiles(accepted);
+  };
+
+  return (
+    <div className="field">
+      <label>Attachments ({totalCount})</label>
+      {visibleExisting.length === 0 && pendingFiles.length === 0 && (
+        <div style={{ fontSize: 12.5, color: C.mid, marginBottom: 6 }}>No attachments yet.</div>
+      )}
+      {visibleExisting.map((a) => (
+        <div key={a.id} className="attachrow static">
+          <Paperclip size={14} style={{ flexShrink: 0, color: C.mid }} />
+          <span className="attachname">{a.name}</span>
+          <span className="attachmeta">{formatFileSize(a.size)}</span>
+          <button type="button" className="iconbtn del" onClick={() => onRemoveExisting(a.id)} aria-label={"Remove " + a.name}><X size={13} /></button>
+        </div>
+      ))}
+      {pendingFiles.map((f, i) => (
+        <div key={i} className="attachrow static pending">
+          <Paperclip size={14} style={{ flexShrink: 0, color: C.mid }} />
+          <span className="attachname">{f.name}</span>
+          <span className="attachmeta">{formatFileSize(f.size)} · pending</span>
+          <button type="button" className="iconbtn del" onClick={() => onRemovePending(i)} aria-label={"Remove " + f.name}><X size={13} /></button>
+        </div>
+      ))}
+      <button type="button" className="btn s" style={{ marginTop: 8 }} onClick={() => inputRef.current?.click()}>
+        <Plus size={14} />Add files
+      </button>
+      <input ref={inputRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
+      {localError && <div style={{ color: BAD, fontSize: 12, marginTop: 6 }}>{localError}</div>}
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return <div className="field"><label>{label}</label>{children}</div>;
 }
@@ -1199,11 +1379,55 @@ export default function App() {
     }
     setTrash((prev) => prev.filter((x) => x.id !== trashId));
   };
-  const purgeFromTrash = (trashId) => setTrash((prev) => prev.filter((x) => x.id !== trashId));
+  // Attachment Storage paths belonging to one trashed record — only ever
+  // called right before that specific record is permanently deleted, never
+  // touching any other record's files. A trashed "client" entry can bundle
+  // deals underneath it (see deleteClient above), so its deals' attachments
+  // are included too.
+  const trashEntryAttachmentPaths = (t) => {
+    const paths = [];
+    if (t.type === "client") {
+      paths.push(...(t.data.client?.attachments || []).map((a) => a.path));
+      (t.data.deals || []).forEach((d) => paths.push(...(d.attachments || []).map((a) => a.path)));
+    } else if (t.type === "deal") {
+      paths.push(...(t.data.attachments || []).map((a) => a.path));
+    }
+    return paths;
+  };
+  // Permanently deleting one Bin record also permanently deletes its own
+  // attachment files (best-effort — see removeAttachmentObjects). Never
+  // touches any other record's attachments.
+  const purgeFromTrash = async (trashId) => {
+    const t = trash.find((x) => x.id === trashId);
+    if (!t) return;
+    const paths = trashEntryAttachmentPaths(t);
+    if (paths.length) {
+      const cleanup = await removeAttachmentObjects(paths);
+      if (!cleanup.ok) {
+        alert(
+          "This item's record was permanently deleted, but its attachment file(s) may not have been — Supabase couldn't confirm the storage cleanup succeeded.\n\n" +
+          "This doesn't affect any other item. If you're concerned, you can check the \"attachments\" storage bucket manually."
+        );
+      }
+    }
+    setTrash((prev) => prev.filter((x) => x.id !== trashId));
+  };
   // Confirmation now lives in TrashBin itself, via the shared ConfirmDialog
   // (see Phase 2) instead of window.confirm() — this function just does the
   // actual wipe once the user has confirmed.
-  const purgeAllTrash = () => setTrash([]);
+  const purgeAllTrash = async () => {
+    const allPaths = trash.flatMap(trashEntryAttachmentPaths);
+    if (allPaths.length) {
+      const cleanup = await removeAttachmentObjects(allPaths);
+      if (!cleanup.ok) {
+        alert(
+          "The Bin was emptied, but Supabase couldn't confirm that all attachment files across it were deleted.\n\n" +
+          "Nothing else was affected. If you're concerned, you can check the \"attachments\" storage bucket manually."
+        );
+      }
+    }
+    setTrash([]);
+  };
 
   const nav = [
     ["dashboard", "Dashboard", LayoutDashboard],
@@ -1434,7 +1658,14 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
   const [q, setQ] = useState("");
   const [sortMode, setSortMode] = useState("newest");
   const [sortSheet, setSortSheet] = useState(false);
-  const blank = { id: "", name: "", company: "", email: "", phone: "", phone2: "", country: "", notes: "" };
+  // Attachment staging for whichever record is currently in the Edit
+  // modal — files picked but not yet uploaded, and existing attachment ids
+  // marked for removal but not yet deleted from Storage. Nothing here
+  // touches Storage or the record until Save (see submit()).
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const firstName = (n) => (n || "").trim().split(/\s+/)[0].toLowerCase();
   let list = clients.filter((c) => (c.name + c.company + c.email).toLowerCase().includes(q.toLowerCase())).slice();
   list = sortMode === "az"
@@ -1442,10 +1673,62 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
     : list.reverse();
   const SORT_OPTIONS = [["newest", "Newest first"], ["az", "A–Z"]];
 
-  const submit = () => {
+  // A stable id exists from the moment the Add form opens (not only after
+  // Save), so newly picked attachments have a real folder to upload into
+  // even before the client record itself has been saved once.
+  const openAdd = () => { setEdit({ id: uid(), name: "", company: "", email: "", phone: "", phone2: "", country: "", notes: "", attachments: [] }); setPendingFiles([]); setRemovedAttachmentIds([]); setSaveError(""); };
+  const openEdit = (c) => { setEdit(c); setPendingFiles([]); setRemovedAttachmentIds([]); setSaveError(""); };
+
+  // Safe order: upload new files -> compute the final attachments array ->
+  // save the record -> only then delete Storage objects for attachments
+  // the user removed. A failed upload is reported and simply excluded
+  // (never silently marked attached); a failed record save triggers
+  // best-effort cleanup of whatever just uploaded, so nothing is orphaned
+  // pointing at a record that was never actually saved.
+  const submit = async () => {
     if (!edit.name.trim()) return alert("Name is required.");
-    if (edit.id) setClients(clients.map((c) => c.id === edit.id ? edit : c));
-    else setClients([...clients, { ...edit, id: uid() }]);
+    setSaving(true);
+    setSaveError("");
+    const uploaded = [];
+    const failedUploads = [];
+    for (const file of pendingFiles) {
+      try { uploaded.push(await uploadAttachmentFile("clients", edit.id, file)); }
+      catch { failedUploads.push(file.name); }
+    }
+    const keptExisting = (edit.attachments || []).filter((a) => !removedAttachmentIds.includes(a.id));
+    const finalRecord = { ...edit, attachments: [...keptExisting, ...uploaded] };
+    const isNew = !clients.some((c) => c.id === edit.id);
+    const nextClients = isNew ? [...clients, finalRecord] : clients.map((c) => c.id === edit.id ? finalRecord : c);
+
+    const res = await trySave("velebit:clients", nextClients);
+    if (!res.ok) {
+      // Record save failed — best-effort clean up the files we just
+      // uploaded so they don't sit orphaned, pointing at nothing saved.
+      if (uploaded.length) {
+        const cleanup = await removeAttachmentObjects(uploaded.map((a) => a.path));
+        if (!cleanup.ok) console.error("Orphan attachment cleanup failed after a failed client save", cleanup);
+      }
+      setSaving(false);
+      setSaveError(
+        "Couldn't save this client" + (res.error?.isStaleConflict ? " — another session saved newer changes first. Reload and try again." : "") +
+        (uploaded.length ? " (any newly uploaded files were cleaned up)." : ".") +
+        (failedUploads.length ? " Also failed to upload: " + failedUploads.join(", ") + "." : "")
+      );
+      return;
+    }
+    setClients(nextClients);
+    // Only after the record itself is safely saved do we clean up files
+    // for attachments the user explicitly removed.
+    const removedPaths = (edit.attachments || []).filter((a) => removedAttachmentIds.includes(a.id)).map((a) => a.path);
+    if (removedPaths.length) {
+      const cleanup = await removeAttachmentObjects(removedPaths);
+      if (!cleanup.ok) console.error("Removed-attachment cleanup failed", cleanup);
+    }
+    setSaving(false);
+    if (failedUploads.length) {
+      setSaveError("Saved, but failed to upload: " + failedUploads.join(", ") + ". The rest of the client was saved — try adding that file again.");
+      return;
+    }
     setEdit(null);
   };
   const doDelete = (c) => { deleteClient(c); setConfirmDelete(null); setViewing(null); };
@@ -1460,7 +1743,7 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
           <div className="search"><Search size={15} color={C.mid} /><input placeholder="Search clients" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button className="btn s" onClick={() => setSortSheet(true)}>Sort</button>
-            <button className="btn p" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add client</button>
+            <button className="btn p" onClick={openAdd}><Plus size={15} />Add client</button>
           </div>
         </div>
 
@@ -1478,7 +1761,7 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
                       <td><div style={{ fontSize: 12.5 }}>{c.email}</div><div style={{ fontSize: 12, color: C.mid }}>{c.phone}</div>{c.phone2 && <div style={{ fontSize: 12, color: C.mid }}>{c.phone2}</div>}</td>
                       <td>{dealCount(c.id)}</td><td>{invCount(c.id)}</td>
                       <td><div className="rowact">
-                        <button className="iconbtn" onClick={() => setEdit(c)}><Pencil size={14} /></button>
+                        <button className="iconbtn" onClick={() => openEdit(c)}><Pencil size={14} /></button>
                         <button className="iconbtn del" onClick={() => setConfirmDelete(c)}><Trash2 size={14} /></button>
                       </div></td>
                     </tr>
@@ -1531,7 +1814,7 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
             <ActionMenu
               ariaLabel="Client actions"
               actions={[
-                { label: "Edit", icon: Pencil, onSelect: () => { setEdit(viewing); setViewing(null); } },
+                { label: "Edit", icon: Pencil, onSelect: () => { openEdit(viewing); setViewing(null); } },
                 { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
               ]}
             />
@@ -1551,13 +1834,17 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
               <DetailRow label="Deal summary" value={dealCount(viewing.id) + " deal" + (dealCount(viewing.id) === 1 ? "" : "s")} />
               <DetailRow label="Invoice summary" value={invCount(viewing.id) + " invoice" + (invCount(viewing.id) === 1 ? "" : "s")} />
             </div>
+            <AttachmentList attachments={viewing.attachments} />
           </div>
         </Modal>
       )}
 
       {edit && (
-        <Modal title={edit.id ? "Edit client" : "Add client"} onClose={() => setEdit(null)}
-          footer={<><button className="btn s" onClick={() => setEdit(null)}>Cancel</button><button className="btn p" onClick={submit}><Check size={15} />Save</button></>}>
+        <Modal title={clients.some((c) => c.id === edit.id) ? "Edit client" : "Add client"} onClose={() => setEdit(null)}
+          footer={<>
+            <button className="btn s" onClick={() => setEdit(null)} disabled={saving}>Cancel</button>
+            <button className="btn p" onClick={submit} disabled={saving}><Check size={15} />{saving ? "Saving…" : "Save"}</button>
+          </>}>
           <div className="frow"><Field label="Name"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="Company"><input value={edit.company} onChange={(e) => setEdit({ ...edit, company: e.target.value })} /></Field></div>
           <div className="frow"><Field label="Email"><input value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></Field>
@@ -1565,6 +1852,15 @@ function Clients({ clients, setClients, deals, invoices, deleteClient }) {
           <div className="frow"><Field label="Phone 2"><input value={edit.phone2 || ""} onChange={(e) => setEdit({ ...edit, phone2: e.target.value })} /></Field>
             <Field label="Country / jurisdiction"><input value={edit.country} onChange={(e) => setEdit({ ...edit, country: e.target.value })} /></Field></div>
           <Field label="Notes"><textarea rows={3} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
+          <AttachmentManager
+            existing={edit.attachments}
+            pendingFiles={pendingFiles}
+            removedIds={removedAttachmentIds}
+            onAddFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+            onRemoveExisting={(id) => setRemovedAttachmentIds((prev) => [...prev, id])}
+            onRemovePending={(idx) => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+          />
+          {saveError && <div style={{ color: BAD, fontSize: 12.5, marginTop: 4 }}>{saveError}</div>}
         </Modal>
       )}
 
@@ -1591,12 +1887,53 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
   const [stageFilter, setStageFilter] = useState("all");
   const [serviceSheet, setServiceSheet] = useState(false);
   const [stageSheet, setStageSheet] = useState(false);
-  const blank = { id: "", clientId: "", title: "", service: SERVICES[0], value: "", stage: "Lead", closeDate: "", notes: "" };
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const cname = (id) => clients.find((c) => c.id === id)?.name || "—";
-  const submit = () => {
+  const openAdd = () => { setEdit({ id: uid(), clientId: "", title: "", service: SERVICES[0], value: "", stage: "Lead", closeDate: "", notes: "", attachments: [] }); setPendingFiles([]); setRemovedAttachmentIds([]); setSaveError(""); };
+  const openEdit = (d) => { setEdit(d); setPendingFiles([]); setRemovedAttachmentIds([]); setSaveError(""); };
+  const submit = async () => {
     if (!edit.title.trim()) return alert("Deal title is required.");
-    if (edit.id) setDeals(deals.map((d) => d.id === edit.id ? edit : d));
-    else setDeals([...deals, { ...edit, id: uid() }]);
+    setSaving(true);
+    setSaveError("");
+    const uploaded = [];
+    const failedUploads = [];
+    for (const file of pendingFiles) {
+      try { uploaded.push(await uploadAttachmentFile("deals", edit.id, file)); }
+      catch { failedUploads.push(file.name); }
+    }
+    const keptExisting = (edit.attachments || []).filter((a) => !removedAttachmentIds.includes(a.id));
+    const finalRecord = { ...edit, attachments: [...keptExisting, ...uploaded] };
+    const isNew = !deals.some((d) => d.id === edit.id);
+    const nextDeals = isNew ? [...deals, finalRecord] : deals.map((d) => d.id === edit.id ? finalRecord : d);
+
+    const res = await trySave("velebit:deals", nextDeals);
+    if (!res.ok) {
+      if (uploaded.length) {
+        const cleanup = await removeAttachmentObjects(uploaded.map((a) => a.path));
+        if (!cleanup.ok) console.error("Orphan attachment cleanup failed after a failed deal save", cleanup);
+      }
+      setSaving(false);
+      setSaveError(
+        "Couldn't save this deal" + (res.error?.isStaleConflict ? " — another session saved newer changes first. Reload and try again." : "") +
+        (uploaded.length ? " (any newly uploaded files were cleaned up)." : ".") +
+        (failedUploads.length ? " Also failed to upload: " + failedUploads.join(", ") + "." : "")
+      );
+      return;
+    }
+    setDeals(nextDeals);
+    const removedPaths = (edit.attachments || []).filter((a) => removedAttachmentIds.includes(a.id)).map((a) => a.path);
+    if (removedPaths.length) {
+      const cleanup = await removeAttachmentObjects(removedPaths);
+      if (!cleanup.ok) console.error("Removed-attachment cleanup failed", cleanup);
+    }
+    setSaving(false);
+    if (failedUploads.length) {
+      setSaveError("Saved, but failed to upload: " + failedUploads.join(", ") + ". The rest of the deal was saved — try adding that file again.");
+      return;
+    }
     setEdit(null);
   };
   const doDelete = (d) => {
@@ -1620,7 +1957,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
             <button className="btn s" onClick={() => setServiceSheet(true)}>{serviceFilter === "all" ? "All services" : serviceFilter}</button>
             <button className="btn s" onClick={() => setStageSheet(true)}>{stageFilter === "all" ? "All stages" : stageFilter}</button>
           </div>
-          <button className="btn p addbtn" onClick={() => setEdit({ ...blank })}><Plus size={15} />Add deal</button>
+          <button className="btn p addbtn" onClick={openAdd}><Plus size={15} />Add deal</button>
         </div>
 
         <div className="hide-mobile">
@@ -1638,7 +1975,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
                       <td><Tag label={d.stage} color={STAGE_COLOR[d.stage]} /></td>
                       <td style={{ fontSize: 12.5 }}>{fmtDate(d.closeDate)}</td>
                       <td><div className="rowact">
-                        <button className="iconbtn" onClick={() => setEdit(d)}><Pencil size={14} /></button>
+                        <button className="iconbtn" onClick={() => openEdit(d)}><Pencil size={14} /></button>
                         <button className="iconbtn del" onClick={() => setConfirmDelete(d)}><Trash2 size={14} /></button>
                       </div></td>
                     </tr>
@@ -1700,7 +2037,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
             <ActionMenu
               ariaLabel="Deal actions"
               actions={[
-                { label: "Edit", icon: Pencil, onSelect: () => { setEdit(viewing); setViewing(null); } },
+                { label: "Edit", icon: Pencil, onSelect: () => { openEdit(viewing); setViewing(null); } },
                 { label: "Move to Bin", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(viewing) },
               ]}
             />
@@ -1716,13 +2053,17 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
               <DetailRow label="Expected close" value={fmtDate(viewing.closeDate) || "—"} />
             </div>
             <DetailSection label="Notes">{viewing.notes || "—"}</DetailSection>
+            <AttachmentList attachments={viewing.attachments} />
           </div>
         </Modal>
       )}
 
       {edit && (
-        <Modal title={edit.id ? "Edit deal" : "Add deal"} onClose={() => setEdit(null)}
-          footer={<><button className="btn s" onClick={() => setEdit(null)}>Cancel</button><button className="btn p" onClick={submit}><Check size={15} />Save</button></>}>
+        <Modal title={deals.some((d) => d.id === edit.id) ? "Edit deal" : "Add deal"} onClose={() => setEdit(null)}
+          footer={<>
+            <button className="btn s" onClick={() => setEdit(null)} disabled={saving}>Cancel</button>
+            <button className="btn p" onClick={submit} disabled={saving}><Check size={15} />{saving ? "Saving…" : "Save"}</button>
+          </>}>
           <Field label="Deal title"><input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></Field>
           <div className="frow">
             <Field label="Client"><select value={edit.clientId} onChange={(e) => setEdit({ ...edit, clientId: e.target.value })}>
@@ -1736,6 +2077,15 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
             <Field label="Expected close"><input type="date" value={edit.closeDate} onChange={(e) => setEdit({ ...edit, closeDate: e.target.value })} /></Field>
           </div>
           <Field label="Notes"><textarea rows={3} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
+          <AttachmentManager
+            existing={edit.attachments}
+            pendingFiles={pendingFiles}
+            removedIds={removedAttachmentIds}
+            onAddFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+            onRemoveExisting={(id) => setRemovedAttachmentIds((prev) => [...prev, id])}
+            onRemovePending={(idx) => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+          />
+          {saveError && <div style={{ color: BAD, fontSize: 12.5, marginTop: 4 }}>{saveError}</div>}
         </Modal>
       )}
 
@@ -2775,6 +3125,9 @@ function SettingsView(props) {
           <label className="btn s" style={{ cursor: "pointer" }}><Download size={15} style={{ transform: "rotate(180deg)" }} />Restore backup
             <input type="file" accept="application/json" style={{ display: "none" }} onChange={importAll} /></label>
           <span className="pill">Your data lives privately in this app, on your account.</span>
+          <p style={{ width: "100%", fontSize: 11.5, color: C.mid, margin: 0 }}>
+            This backup contains your records and their attachment details (filename, size, etc.) — not the attachment files themselves, which stay in secure file storage. Restoring a backup brings records back correctly as long as those stored files still exist.
+          </p>
         </div>
 
         <AutoBackupsList {...props} />
