@@ -729,8 +729,10 @@ button.attachrow:hover{border-color:${C.mid}}
   .backdrop{display:block}
   .side{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 20px rgba(0,0,0,.3);width:clamp(180px,50vw,230px)}
   .side.open{transform:translateX(0)}
-  .main{width:100%;padding-top:46px}
-  .head{padding:6px 16px 6px}
+  .main{width:100%}
+  /* Page title on the hamburger's row (the fixed button is 38px tall at top:14px, so its centre is 33px down; a 22px title is ~30px tall);
+     left padding clears the button. */
+  .head{padding:18px 16px 8px 62px}
   .head h1{font-size:22px}
   .head p{font-size:12px;margin-top:2px}
   .body{padding:6px 16px 60px}
@@ -2103,7 +2105,7 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
           <Field label="Deal title"><input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></Field>
           <div className="frow">
             <Field label="Client"><select value={edit.clientId} onChange={(e) => setEdit({ ...edit, clientId: e.target.value })}>
-              <option value="">— none —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+              <option value="">— none —</option>{clients.slice().reverse().map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
             <Field label="Service"><select value={edit.service} onChange={(e) => setEdit({ ...edit, service: e.target.value })}>
               {SERVICES.map((s) => <option key={s}>{s}</option>)}</select></Field>
           </div>
@@ -2290,7 +2292,7 @@ function Referrals({ referrals, setReferrals, clients, trashIt }) {
 
       {pickerOpen && edit && (
         <ClientPicker
-          clients={clients}
+          clients={clients.slice().reverse()}
           value={edit.clientId}
           onSelect={(id) => setEdit({ ...edit, clientId: id })}
           onClose={() => setPickerOpen(false)}
