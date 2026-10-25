@@ -730,10 +730,10 @@ button.attachrow:hover{border-color:${C.mid}}
   .side{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 20px rgba(0,0,0,.3);width:clamp(180px,50vw,230px)}
   .side.open{transform:translateX(0)}
   .main{width:100%}
-  /* Page title on the hamburger's row (the fixed button is 38px tall at top:14px, so its centre is 33px down; a 22px title is ~30px tall);
-     left padding clears the button. */
-  .head{padding:18px 16px 8px 62px}
-  .head h1{font-size:22px}
+  /* Page title centred on the hamburger: the fixed button is 38px tall at top:14px, so the title's line box is
+     38px tall starting at 14px (same centre line); left padding clears the button. */
+  .head{padding:14px 16px 6px 62px}
+  .head h1{font-size:22px;line-height:38px}
   .head p{font-size:12px;margin-top:2px}
   .body{padding:6px 16px 60px}
   .grid{grid-template-columns:1fr !important}
