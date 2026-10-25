@@ -732,7 +732,7 @@ button.attachrow:hover{border-color:${C.mid}}
   .main{width:100%}
   /* Page title centred on the hamburger: the fixed button is 38px tall at top:14px, so the title's line box is
      38px tall starting at 14px (same centre line); left padding clears the button. */
-  .head{padding:14px 16px 6px 62px}
+  .head{padding:14px 62px 6px;text-align:center}
   .head h1{font-size:22px;line-height:38px}
   .head p{font-size:12px;margin-top:2px}
   .body{padding:6px 16px 60px}
