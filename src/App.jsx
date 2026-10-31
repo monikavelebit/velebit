@@ -2006,7 +2006,13 @@ function Deals({ deals, setDeals, clients, trashIt, settings }) {
                 <tbody>
                   {filtered.slice().reverse().map((d) => (
                     <tr key={d.id}>
-                      <td style={{ fontWeight: 600, color: C.brandBlueDark }}>{d.title}</td>
+                      <td style={{ fontWeight: 600, color: C.brandBlueDark }}>
+                        <button
+                          type="button"
+                          onClick={() => setViewing(d)}
+                          style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}
+                        >{d.title}</button>
+                      </td>
                       <td>{cname(d.clientId)}</td>
                       <td style={{ fontSize: 12.5, color: C.mid }}>{d.service}</td>
                       <td className="num">{money(d.value)}</td>
